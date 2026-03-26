@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BiometricStatus {
+  PENDING
+  ENROLLED
+}
+
+enum FingerPosition {
+  LEFT_THUMB
+  LEFT_INDEX
+  LEFT_MIDDLE
+  RIGHT_THUMB
+  RIGHT_INDEX
+  RIGHT_MIDDLE
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum AttendanceEventStatus {
+  PRESENT
+}
+
+enum AttendanceSource {
+  SCANNER
+  ADMIN_APPROVAL
+}
+
+enum VerificationOutcome {
+  MATCHED
+  NO_MATCH
+  ADMIN_APPROVED
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  members   Member[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Member {
+  id                String               @id @default(cuid())
+  name              String
+  phone             String
+  email             String               @unique
+  biometricStatus   BiometricStatus      @default(PENDING)
+  departmentId      String
+  department        Department           @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  biometricTemplates BiometricTemplate[]
+  attendanceEvents  AttendanceEvent[]
+  verificationAttempts VerificationAttempt[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([departmentId])
+  @@index([name])
+}
+
+model BiometricTemplate {
+  id                String         @id @default(cuid())
+  memberId          String
+  member            Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  fingerPosition    FingerPosition
+  encryptedTemplate Bytes
+  iv                Bytes
+  authTag           Bytes
+  templateVersion   String         @default("v1")
+  qualityScore      Int?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@unique([memberId, fingerPosition])
+  @@index([memberId])
+}
+
+model AttendanceSession {
+  id                  String              @id @default(cuid())
+  programName         String
+  startedBy           String
+  startedAt           DateTime            @default(now())
+  endedAt             DateTime?
+  status              SessionStatus       @default(ACTIVE)
+  notes               String?
+  events              AttendanceEvent[]
+  verificationAttempts VerificationAttempt[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([status, startedAt])
+  @@index([programName])
+}
+
+model AttendanceEvent {
+  id         String                @id @default(cuid())
+  sessionId  String
+  session    AttendanceSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  memberId   String?
+  member     Member?               @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  guestName  String?
+  eventStatus AttendanceEventStatus @default(PRESENT)
+  source     AttendanceSource      @default(SCANNER)
+  message    String?
+  occurredAt DateTime              @default(now())
+  createdAt  DateTime              @default(now())
+
+  @@index([sessionId, occurredAt])
+  @@index([memberId])
+  @@unique([sessionId, memberId], map: "session_member_unique")
+}
+
+model VerificationAttempt {
+  id             String             @id @default(cuid())
+  sessionId      String
+  session        AttendanceSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  matchedMemberId String?
+  matchedMember  Member?            @relation(fields: [matchedMemberId], references: [id], onDelete: SetNull)
+  deviceId       String?
+  confidence     Float?
+  outcome        VerificationOutcome
+  notes          String?
+  approvedBy     String?
+  approvedAt     DateTime?
+  occurredAt     DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+
+  @@index([sessionId, occurredAt])
+  @@index([matchedMemberId])
+}

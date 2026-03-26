@@ -1,0 +1,273 @@
+import type { Request, Response } from "express";
+
+import { env } from "../config/env";
+import prisma from "../lib/prisma";
+import { encryptBiometricTemplate } from "../utils/biometricCrypto";
+import { hasPrismaErrorCode } from "../utils/prismaError";
+import { getRouteParam } from "../utils/request";
+
+const BIOMETRIC_STATUS = {
+  PENDING: "PENDING",
+  ENROLLED: "ENROLLED",
+} as const;
+
+const FINGER_POSITIONS = [
+  "LEFT_THUMB",
+  "LEFT_INDEX",
+  "LEFT_MIDDLE",
+  "RIGHT_THUMB",
+  "RIGHT_INDEX",
+  "RIGHT_MIDDLE",
+] as const;
+
+type FingerPosition = (typeof FINGER_POSITIONS)[number];
+
+const validFingerPositions = new Set<string>(FINGER_POSITIONS);
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function toPrismaBytes(buffer: Buffer): Uint8Array<ArrayBuffer> {
+  return buffer as unknown as Uint8Array<ArrayBuffer>;
+}
+
+async function ensureDepartmentExists(departmentId: string): Promise<boolean> {
+  const department = await prisma.department.findUnique({
+    where: { id: departmentId },
+    select: { id: true },
+  });
+  return Boolean(department);
+}
+
+export async function listMembers(req: Request, res: Response): Promise<void> {
+  const departmentId =
+    typeof req.query.departmentId === "string" ? req.query.departmentId : undefined;
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+
+  const where = {
+    ...(departmentId ? { departmentId } : {}),
+    ...(search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" as const } },
+            { email: { contains: search, mode: "insensitive" as const } },
+            { phone: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
+
+  const members = await prisma.member.findMany({
+    where,
+    include: {
+      department: true,
+      _count: {
+        select: {
+          biometricTemplates: true,
+        },
+      },
+    },
+    orderBy: {
+      name: "asc",
+    },
+  });
+
+  const response = members.map((member) => ({
+    ...member,
+    enrolledFingerCount: member._count.biometricTemplates,
+  }));
+
+  res.status(200).json(response);
+}
+
+export async function createMember(req: Request, res: Response): Promise<void> {
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const departmentId =
+    typeof req.body?.departmentId === "string" ? req.body.departmentId.trim() : "";
+  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : "";
+  const emailInput = typeof req.body?.email === "string" ? req.body.email : "";
+  const email = normalizeEmail(emailInput);
+
+  if (!name || !departmentId || !phone || !email) {
+    res.status(400).json({
+      message: "name, departmentId, phone, and email are required.",
+    });
+    return;
+  }
+
+  if (!(await ensureDepartmentExists(departmentId))) {
+    res.status(404).json({ message: "Department not found." });
+    return;
+  }
+
+  try {
+    const member = await prisma.member.create({
+      data: {
+        name,
+        departmentId,
+        phone,
+        email,
+      },
+      include: {
+        department: true,
+      },
+    });
+
+    res.status(201).json(member);
+  } catch (error) {
+    if (hasPrismaErrorCode(error, "P2002")) {
+      res.status(409).json({ message: "Email already exists." });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+export async function getMemberBiometrics(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const memberId = getRouteParam(req.params.memberId);
+
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    include: {
+      biometricTemplates: {
+        select: {
+          id: true,
+          fingerPosition: true,
+          qualityScore: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+    },
+  });
+
+  if (!member) {
+    res.status(404).json({ message: "Member not found." });
+    return;
+  }
+
+  res.status(200).json({
+    memberId: member.id,
+    biometricStatus: member.biometricStatus,
+    enrolledFingerCount: member.biometricTemplates.length,
+    templates: member.biometricTemplates,
+  });
+}
+
+export async function enrollMemberBiometric(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const memberId = getRouteParam(req.params.memberId);
+  const fingerPositionInput =
+    typeof req.body?.fingerPosition === "string" ? req.body.fingerPosition : "";
+  const templateBase64 =
+    typeof req.body?.templateBase64 === "string" ? req.body.templateBase64.trim() : "";
+  const qualityScore = req.body?.qualityScore;
+
+  if (!validFingerPositions.has(fingerPositionInput)) {
+    res.status(400).json({
+      message:
+        "fingerPosition is required and must be one of the supported finger positions.",
+    });
+    return;
+  }
+
+  if (!templateBase64) {
+    res.status(400).json({ message: "templateBase64 is required." });
+    return;
+  }
+
+  if (
+    qualityScore !== undefined &&
+    (!Number.isInteger(qualityScore) || qualityScore < 0 || qualityScore > 100)
+  ) {
+    res.status(400).json({
+      message: "qualityScore must be an integer between 0 and 100 when provided.",
+    });
+    return;
+  }
+
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { id: true },
+  });
+
+  if (!member) {
+    res.status(404).json({ message: "Member not found." });
+    return;
+  }
+
+  const fingerPosition = fingerPositionInput as FingerPosition;
+
+  let encrypted;
+  try {
+    encrypted = encryptBiometricTemplate(templateBase64, env.templateEncryptionKey);
+  } catch {
+    res.status(400).json({ message: "Invalid biometric template format." });
+    return;
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.biometricTemplate.upsert({
+      where: {
+        memberId_fingerPosition: {
+          memberId,
+          fingerPosition,
+        },
+      },
+      create: {
+        memberId,
+        fingerPosition,
+        encryptedTemplate: toPrismaBytes(encrypted.encryptedTemplate),
+        iv: toPrismaBytes(encrypted.iv),
+        authTag: toPrismaBytes(encrypted.authTag),
+        qualityScore: Number.isInteger(qualityScore) ? qualityScore : null,
+      },
+      update: {
+        encryptedTemplate: toPrismaBytes(encrypted.encryptedTemplate),
+        iv: toPrismaBytes(encrypted.iv),
+        authTag: toPrismaBytes(encrypted.authTag),
+        qualityScore: Number.isInteger(qualityScore) ? qualityScore : null,
+      },
+    });
+
+    const enrolledFingerCount = await tx.biometricTemplate.count({
+      where: { memberId },
+    });
+
+    const biometricStatus =
+      enrolledFingerCount >= 2
+        ? BIOMETRIC_STATUS.ENROLLED
+        : BIOMETRIC_STATUS.PENDING;
+
+    const updatedMember = await tx.member.update({
+      where: { id: memberId },
+      data: { biometricStatus },
+      select: {
+        id: true,
+        biometricStatus: true,
+      },
+    });
+
+    return {
+      member: updatedMember,
+      enrolledFingerCount,
+    };
+  });
+
+  res.status(200).json({
+    memberId: result.member.id,
+    biometricStatus: result.member.biometricStatus,
+    enrolledFingerCount: result.enrolledFingerCount,
+    enrollmentComplete: result.enrolledFingerCount >= 2,
+  });
+}
