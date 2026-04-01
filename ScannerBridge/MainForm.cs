@@ -56,6 +56,7 @@ namespace ScannerBridge
         private ListView _matchingCandidatesListView;
         private TextBox _attendanceResultTextBox;
         private Panel _attendanceSummaryPanel;
+        private Label _attendanceSummaryWelcomeLabel;
         private Label _attendanceSummaryTitleLabel;
         private Label _attendanceSummaryMessageLabel;
         private Label _attendanceSummaryMemberLabel;
@@ -81,7 +82,7 @@ namespace ScannerBridge
             ClientSize = new Size(defaultWidth, defaultHeight);
             MinimumSize = new Size(1000, 780);
             AutoScroll = true;
-            AutoScrollMinSize = new Size(1240, 1120);
+            AutoScrollMinSize = new Size(1240, 1140);
 
             Label titleLabel = new Label();
             titleLabel.Text = "Fingerprint Enrollment and Attendance Bridge";
@@ -288,7 +289,7 @@ namespace ScannerBridge
             GroupBox attendanceGroup = new GroupBox();
             attendanceGroup.Text = "Scanner Attendance Matching";
             attendanceGroup.Location = new Point(16, 556);
-            attendanceGroup.Size = new Size(1208, 344);
+            attendanceGroup.Size = new Size(1208, 364);
 
             Label scannerDeviceIdLabel = new Label();
             scannerDeviceIdLabel.Text = "Device ID";
@@ -402,32 +403,39 @@ namespace ScannerBridge
             _attendanceResultTextBox.Size = new Size(376, 78);
 
             _attendanceSummaryPanel = new Panel();
-            _attendanceSummaryPanel.Location = new Point(16, 254);
-            _attendanceSummaryPanel.Size = new Size(1176, 72);
+            _attendanceSummaryPanel.Location = new Point(16, 246);
+            _attendanceSummaryPanel.Size = new Size(1176, 92);
             _attendanceSummaryPanel.BorderStyle = BorderStyle.FixedSingle;
 
+            _attendanceSummaryWelcomeLabel = new Label();
+            _attendanceSummaryWelcomeLabel.Location = new Point(16, 6);
+            _attendanceSummaryWelcomeLabel.Size = new Size(1144, 30);
+            _attendanceSummaryWelcomeLabel.Font = new Font(Font.FontFamily, 18.0f, FontStyle.Bold);
+            _attendanceSummaryWelcomeLabel.TextAlign = ContentAlignment.MiddleCenter;
+
             _attendanceSummaryTitleLabel = new Label();
-            _attendanceSummaryTitleLabel.Location = new Point(16, 8);
-            _attendanceSummaryTitleLabel.Size = new Size(360, 24);
-            _attendanceSummaryTitleLabel.Font = new Font(Font.FontFamily, 12.0f, FontStyle.Bold);
+            _attendanceSummaryTitleLabel.Location = new Point(16, 42);
+            _attendanceSummaryTitleLabel.Size = new Size(260, 20);
+            _attendanceSummaryTitleLabel.Font = new Font(Font.FontFamily, 10.0f, FontStyle.Bold);
 
             _attendanceSummaryMessageLabel = new Label();
-            _attendanceSummaryMessageLabel.Location = new Point(16, 36);
-            _attendanceSummaryMessageLabel.Size = new Size(520, 24);
+            _attendanceSummaryMessageLabel.Location = new Point(16, 64);
+            _attendanceSummaryMessageLabel.Size = new Size(520, 20);
             _attendanceSummaryMessageLabel.Font = new Font(Font.FontFamily, 9.5f, FontStyle.Regular);
 
             _attendanceSummaryMemberLabel = new Label();
-            _attendanceSummaryMemberLabel.Location = new Point(560, 10);
-            _attendanceSummaryMemberLabel.Size = new Size(310, 24);
-            _attendanceSummaryMemberLabel.Font = new Font(Font.FontFamily, 11.0f, FontStyle.Bold);
+            _attendanceSummaryMemberLabel.Location = new Point(560, 42);
+            _attendanceSummaryMemberLabel.Size = new Size(310, 20);
+            _attendanceSummaryMemberLabel.Font = new Font(Font.FontFamily, 10.0f, FontStyle.Bold);
             _attendanceSummaryMemberLabel.TextAlign = ContentAlignment.MiddleLeft;
 
             _attendanceSummaryMetaLabel = new Label();
-            _attendanceSummaryMetaLabel.Location = new Point(560, 36);
-            _attendanceSummaryMetaLabel.Size = new Size(600, 24);
+            _attendanceSummaryMetaLabel.Location = new Point(560, 64);
+            _attendanceSummaryMetaLabel.Size = new Size(600, 20);
             _attendanceSummaryMetaLabel.Font = new Font(Font.FontFamily, 9.0f, FontStyle.Regular);
             _attendanceSummaryMetaLabel.TextAlign = ContentAlignment.MiddleLeft;
 
+            _attendanceSummaryPanel.Controls.Add(_attendanceSummaryWelcomeLabel);
             _attendanceSummaryPanel.Controls.Add(_attendanceSummaryTitleLabel);
             _attendanceSummaryPanel.Controls.Add(_attendanceSummaryMessageLabel);
             _attendanceSummaryPanel.Controls.Add(_attendanceSummaryMemberLabel);
@@ -456,7 +464,7 @@ namespace ScannerBridge
 
             GroupBox logGroup = new GroupBox();
             logGroup.Text = "Activity Log";
-            logGroup.Location = new Point(16, 916);
+            logGroup.Location = new Point(16, 936);
             logGroup.Size = new Size(1208, 188);
 
             _logTextBox = new TextBox();
@@ -1332,6 +1340,9 @@ namespace ScannerBridge
                     memberDepartment + " | " + confidenceText,
                     Color.FromArgb(216, 248, 223),
                     Color.FromArgb(24, 92, 48));
+                SetAttendanceWelcomeText(
+                    "WELCOME, " + memberName.ToUpperInvariant(),
+                    Color.FromArgb(24, 92, 48));
                 SystemSounds.Asterisk.Play();
             }
             else if (backendStatus == "already_marked")
@@ -1342,6 +1353,9 @@ namespace ScannerBridge
                     memberName,
                     memberDepartment + " | " + confidenceText,
                     Color.FromArgb(255, 243, 205),
+                    Color.FromArgb(120, 80, 0));
+                SetAttendanceWelcomeText(
+                    "WELCOME BACK, " + memberName.ToUpperInvariant(),
                     Color.FromArgb(120, 80, 0));
                 SystemSounds.Exclamation.Play();
             }
@@ -1413,15 +1427,28 @@ namespace ScannerBridge
             }
 
             _attendanceSummaryPanel.BackColor = backgroundColor;
+            _attendanceSummaryWelcomeLabel.Text = string.Empty;
             _attendanceSummaryTitleLabel.Text = SafeValue(title, string.Empty);
             _attendanceSummaryMessageLabel.Text = SafeValue(message, string.Empty);
             _attendanceSummaryMemberLabel.Text = SafeValue(member, string.Empty);
             _attendanceSummaryMetaLabel.Text = SafeValue(meta, string.Empty);
 
+            _attendanceSummaryWelcomeLabel.ForeColor = foregroundColor;
             _attendanceSummaryTitleLabel.ForeColor = foregroundColor;
             _attendanceSummaryMessageLabel.ForeColor = foregroundColor;
             _attendanceSummaryMemberLabel.ForeColor = foregroundColor;
             _attendanceSummaryMetaLabel.ForeColor = foregroundColor;
+        }
+
+        private void SetAttendanceWelcomeText(string text, Color color)
+        {
+            if (_attendanceSummaryWelcomeLabel == null)
+            {
+                return;
+            }
+
+            _attendanceSummaryWelcomeLabel.Text = SafeValue(text, string.Empty);
+            _attendanceSummaryWelcomeLabel.ForeColor = color;
         }
 
         private void HighlightMatchingCandidate(string memberId)

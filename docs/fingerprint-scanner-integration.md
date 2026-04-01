@@ -44,6 +44,23 @@ That means the project now has:
 - local matching against enrolled templates
 - attendance submission back to the backend after match/no-match
 
+## What now works in the web app
+
+The React admin dashboard now supports:
+
+- admin login
+- department setup
+- member registration
+- member list and search
+- biometric status lookup for a selected member
+- attendance session start and close
+- live attendance monitoring
+- manual approval
+- CSV export
+
+This means registration now starts in the web app and finishes in
+`ScannerBridge`.
+
 ## Recommended architecture
 
 For this project, the cleanest path is:
@@ -128,16 +145,22 @@ Configuration needed:
 ### Registration / enrollment
 
 1. Start the backend.
-2. Open `ScannerBridge`.
-3. Log in with the admin password.
-4. Search for and select a member.
-5. Choose a finger position.
-6. Click `Capture and Enroll`.
-7. Repeat until two fingers are enrolled and the member becomes `ENROLLED`.
+2. Open the admin dashboard.
+3. Sign in with the admin password.
+4. Open the `Members` tab.
+5. Create a department if needed.
+6. Create the member in the web app.
+7. Select the member and note or copy the member ID.
+8. Open `ScannerBridge`.
+9. Search for and select the same member.
+10. Choose a finger position.
+11. Click `Capture and Enroll`.
+12. Repeat until two fingers are enrolled and the member becomes `ENROLLED`.
+13. Return to the web app and refresh biometric status if needed.
 
 ### Attendance matching
 
-1. Start an attendance session in the backend.
+1. Start an attendance session from the admin dashboard.
 2. Open `ScannerBridge`.
 3. Enter the scanner device details and shared secret.
 4. Click `Scanner Login`.
@@ -145,14 +168,15 @@ Configuration needed:
 6. Click `Scan and Mark Attendance`.
 7. Place a registered finger on the scanner once.
 8. Let the app verify locally and submit the result to the backend.
+9. Review live attendance from the dashboard.
 
 ## Next build step
 
-The next meaningful implementation task is to refine the attendance terminal
-experience now that matching is wired in.
+The next meaningful implementation task is deeper exception handling around
+scanner no-match cases and verification review.
 
 Recommended next improvements:
 
-- kiosk/operator polish for the attendance view
-- clearer duplicate/no-match feedback
+- no-match review queue for admins
 - tighter candidate scoping and security hardening around decrypted templates
+- more polished attendance terminal/kiosk views

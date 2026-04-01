@@ -6,6 +6,7 @@ import {
   exportSessionCsv,
   listSessionEvents,
   listSessions,
+  markAttendanceByAagcNumber,
   scanAttendance,
   startSession,
 } from "../controllers/attendanceController";
@@ -20,6 +21,7 @@ router.post("/sessions", startSession);
 router.post("/sessions/:sessionId/close", closeSession);
 router.get("/sessions/:sessionId/events", listSessionEvents);
 router.post("/sessions/:sessionId/scan", scanAttendance);
+router.post("/sessions/:sessionId/mark-by-number", markAttendanceByAagcNumber);
 router.post("/sessions/:sessionId/admin-approve", adminApproveAttendance);
 router.get("/sessions/:sessionId/export.csv", exportSessionCsv);
 

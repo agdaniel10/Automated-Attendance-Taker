@@ -1,12 +1,14 @@
 import type { Request, Response } from "express";
 
 import prisma from "../lib/prisma";
+import { normalizeAagcNumber } from "../utils/aagcNumber";
 import { buildCsv } from "../utils/csv";
 import { hasPrismaErrorCode } from "../utils/prismaError";
 import { getRouteParam } from "../utils/request";
 
 const ATTENDANCE_SOURCE = {
   SCANNER: "SCANNER",
+  MEMBER_NUMBER: "MEMBER_NUMBER",
   ADMIN_APPROVAL: "ADMIN_APPROVAL",
 } as const;
 
@@ -146,6 +148,7 @@ export async function listSessionEvents(
     status: event.eventStatus,
     message: event.message,
     memberId: event.memberId,
+    aagcNumber: event.member?.aagcNumber ?? null,
     name: event.member?.name ?? event.guestName ?? "Unknown",
     department: event.member?.department?.name ?? null,
     phone: event.member?.phone ?? null,
@@ -270,6 +273,7 @@ export async function scanAttendance(req: Request, res: Response): Promise<void>
       message: `${member.name}, your attendance has already been recorded.`,
       member: {
         id: member.id,
+        aagcNumber: member.aagcNumber,
         name: member.name,
         department: member.department.name,
       },
@@ -310,6 +314,7 @@ export async function scanAttendance(req: Request, res: Response): Promise<void>
       message: welcomeMessage,
       member: {
         id: member.id,
+        aagcNumber: member.aagcNumber,
         name: member.name,
         department: member.department.name,
       },
@@ -323,6 +328,125 @@ export async function scanAttendance(req: Request, res: Response): Promise<void>
         message: `${member.name}, your attendance has already been recorded.`,
         member: {
           id: member.id,
+          aagcNumber: member.aagcNumber,
+          name: member.name,
+          department: member.department.name,
+        },
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+export async function markAttendanceByAagcNumber(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const sessionId = getRouteParam(req.params.sessionId);
+  const aagcNumberInput =
+    typeof req.body?.aagcNumber === "string" ? req.body.aagcNumber : "";
+  const aagcNumber = normalizeAagcNumber(aagcNumberInput);
+
+  if (!aagcNumber) {
+    res.status(400).json({
+      message: "aagcNumber is required and must look like AAGC1 or 1.",
+    });
+    return;
+  }
+
+  const session = await prisma.attendanceSession.findFirst({
+    where: {
+      id: sessionId,
+      status: SESSION_STATUS.ACTIVE,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!session) {
+    res.status(404).json({
+      message: "Active attendance session not found.",
+      status: "session_not_active",
+    });
+    return;
+  }
+
+  const member = await prisma.member.findUnique({
+    where: { aagcNumber },
+    include: {
+      department: true,
+    },
+  });
+
+  if (!member) {
+    res.status(404).json({
+      status: "member_not_found",
+      message: `No member was found for ${aagcNumber}.`,
+    });
+    return;
+  }
+
+  const existingEvent = await prisma.attendanceEvent.findFirst({
+    where: {
+      sessionId,
+      memberId: member.id,
+    },
+    select: {
+      id: true,
+      occurredAt: true,
+    },
+  });
+
+  if (existingEvent) {
+    res.status(200).json({
+      status: "already_marked",
+      message: `${member.name}, your attendance has already been recorded.`,
+      member: {
+        id: member.id,
+        aagcNumber: member.aagcNumber,
+        name: member.name,
+        department: member.department.name,
+      },
+      markedAt: existingEvent.occurredAt,
+    });
+    return;
+  }
+
+  const welcomeMessage = `${member.name}, welcome to service`;
+
+  try {
+    const event = await prisma.attendanceEvent.create({
+      data: {
+        sessionId,
+        memberId: member.id,
+        source: ATTENDANCE_SOURCE.MEMBER_NUMBER,
+        message: welcomeMessage,
+      },
+    });
+
+    res.status(200).json({
+      status: "present",
+      message: welcomeMessage,
+      member: {
+        id: member.id,
+        aagcNumber: member.aagcNumber,
+        name: member.name,
+        department: member.department.name,
+      },
+      attendanceEventId: event.id,
+      markedAt: event.occurredAt,
+    });
+  } catch (error) {
+    if (hasPrismaErrorCode(error, "P2002")) {
+      res.status(200).json({
+        status: "already_marked",
+        message: `${member.name}, your attendance has already been recorded.`,
+        member: {
+          id: member.id,
+          aagcNumber: member.aagcNumber,
           name: member.name,
           department: member.department.name,
         },
@@ -436,6 +560,7 @@ export async function exportSessionCsv(
     "timestamp",
     "status",
     "source",
+    "aagcNumber",
     "name",
     "department",
     "phone",
@@ -447,6 +572,7 @@ export async function exportSessionCsv(
     event.occurredAt.toISOString(),
     event.eventStatus,
     event.source,
+    event.member?.aagcNumber ?? "",
     event.member?.name ?? event.guestName ?? "",
     event.member?.department?.name ?? "",
     event.member?.phone ?? "",

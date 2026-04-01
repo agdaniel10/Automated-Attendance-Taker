@@ -32,6 +32,7 @@ enum AttendanceEventStatus {
 
 enum AttendanceSource {
   SCANNER
+  MEMBER_NUMBER
   ADMIN_APPROVAL
 }
 
@@ -51,6 +52,8 @@ model Department {
 
 model Member {
   id                String               @id @default(cuid())
+  aagcNumber        String?              @unique
+  aagcSequence      Int?                 @unique
   name              String
   phone             String
   email             String               @unique

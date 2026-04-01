@@ -86,6 +86,7 @@ export async function listActiveSessionMatchingCandidates(
     },
     select: {
       id: true,
+      aagcNumber: true,
       name: true,
       biometricStatus: true,
       phone: true,
@@ -128,6 +129,7 @@ export async function listActiveSessionMatchingCandidates(
 
   const candidates = members.map((member) => ({
     memberId: member.id,
+    aagcNumber: member.aagcNumber,
     name: member.name,
     biometricStatus: member.biometricStatus,
     phone: member.phone,

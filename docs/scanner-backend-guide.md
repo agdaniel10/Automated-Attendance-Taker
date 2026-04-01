@@ -8,9 +8,10 @@ should be updated alongside the code.
 
 ## Purpose
 
-The project uses two cooperating parts:
+The project uses three cooperating parts:
 
 - the backend in `Server`
+- the React admin dashboard in `Client/frontend`
 - the Windows desktop helper in `ScannerBridge`
 
 The backend is responsible for:
@@ -20,6 +21,17 @@ The backend is responsible for:
 - encrypted storage of fingerprint templates
 - attendance sessions
 - attendance events and audit trail
+
+The admin dashboard is responsible for:
+
+- admin sign-in
+- department setup
+- member registration
+- assigning and showing each member's simple `AAGC` number
+- attendance session control
+- attendance monitoring and export
+- attendance fallback by typed `AAGC` number
+- guiding operators into `ScannerBridge` for fingerprint enrollment
 
 `ScannerBridge` is responsible for:
 
@@ -37,6 +49,12 @@ The fingerprint reader does not talk directly to the database.
 ## High-Level Architecture
 
 ```text
+Admin Dashboard (React + TypeScript + Tailwind)
+    ->
+Backend API (Express + Prisma)
+    ->
+PostgreSQL Database
+
 Fingerprint Reader
     ->
 ScannerBridge (Windows desktop app)
@@ -79,6 +97,73 @@ Important desktop-app files:
 - `ScannerBridge/EnrollmentCaptureDialog.cs`
 - `ScannerBridge/AttendanceVerificationDialog.cs`
 - `ScannerBridge/ApiClient.cs`
+
+### Admin Dashboard
+
+Important frontend files:
+
+- `Client/frontend/src/App.tsx`
+- `Client/frontend/src/api/authApi.ts`
+- `Client/frontend/src/api/attendanceApi.ts`
+- `Client/frontend/src/api/memberApi.ts`
+- `Client/frontend/src/lib/adminSession.ts`
+- `Client/frontend/src/components/`
+
+## How Member Registration Works Today
+
+Member onboarding now starts in the web dashboard and finishes in
+`ScannerBridge`.
+
+### Member registration flow
+
+1. The operator opens the admin dashboard in `Client/frontend`.
+2. The operator signs in with the existing admin password.
+3. The operator opens the `Members` tab.
+4. If needed, the operator creates a department first.
+5. The operator fills the new member form with:
+   - name
+   - phone
+   - email
+   - department
+6. The dashboard sends `POST /api/members`.
+7. The backend generates a simple church number like `AAGC1` or `AAGC25`.
+8. The new member appears immediately in the member list.
+9. The operator can now search that member by name, phone, email, or `AAGC`
+   number.
+10. The operator selects that member in the dashboard.
+11. The dashboard loads `GET /api/members/:memberId/biometrics`.
+12. The dashboard shows both the member ID and `AAGC` number for the enrollment
+    handoff.
+13. The operator opens `ScannerBridge` and enrolls two fingers for that member.
+14. The operator returns to the dashboard and refreshes biometric status.
+15. Once two templates exist, the member becomes `ENROLLED`.
+
+### Dashboard routes used for registration
+
+- `POST /api/admin/auth/login`
+- `GET /api/departments`
+- `POST /api/departments`
+- `GET /api/members`
+- `POST /api/members`
+- `GET /api/members/:memberId/biometrics`
+
+### AAGC number rule
+
+Every member now receives an automatically generated church number.
+
+Format:
+
+- `AAGC1`
+- `AAGC2`
+- `AAGC3`
+
+Important behavior:
+
+- the displayed format is simple, without leading zeros
+- the dashboard shows this number in the member list and enrollment panel
+- member search now accepts the `AAGC` number
+- attendance can now be recorded by typing the `AAGC` number during an active
+  session
 
 ## How Enrollment Works Today
 
@@ -200,7 +285,7 @@ Endpoint:
 
 Purpose:
 
-- find a member by name, email, or phone
+- find a member by `AAGC` number, name, email, or phone
 - select them in the desktop app before enrollment
 
 ### Read biometric status
@@ -214,6 +299,53 @@ Purpose:
 - show current biometric status
 - show enrolled finger count
 - show which finger positions already exist
+
+## Admin Dashboard Communication
+
+The web dashboard also talks to the backend over HTTP.
+
+It is the operator-facing layer for normal day-to-day administration, while
+`ScannerBridge` remains the hardware-facing layer.
+
+### Dashboard authentication
+
+The dashboard uses the same admin login route as `ScannerBridge` enrollment:
+
+`POST /api/admin/auth/login`
+
+The returned JWT is stored in browser `sessionStorage`, not `localStorage`.
+
+That means:
+
+- the login survives normal page navigation during the current browser session
+- the token clears when that browser session ends
+
+### Dashboard attendance routes used today
+
+- `GET /api/attendance/sessions`
+- `POST /api/attendance/sessions`
+- `POST /api/attendance/sessions/:sessionId/close`
+- `GET /api/attendance/sessions/:sessionId/events`
+- `POST /api/attendance/sessions/:sessionId/mark-by-number`
+- `POST /api/attendance/sessions/:sessionId/admin-approve`
+- `GET /api/attendance/sessions/:sessionId/export.csv`
+
+### Dashboard capabilities today
+
+The admin dashboard can now:
+
+- sign in admins
+- create departments
+- create members
+- list and search members
+- show biometric enrollment status for a selected member
+- start attendance sessions
+- close attendance sessions
+- show live attendance feed
+- mark attendance by typed `AAGC` number
+- inspect recent session history
+- manually approve attendance
+- export session CSV files
 
 ## Scanner-Specific Attendance Communication
 
@@ -416,6 +548,28 @@ This part is now implemented in `ScannerBridge`.
 14. `ScannerBridge` shows the latest result in a color-coded attendance banner
     plus a detailed result panel.
 
+## How Attendance Operations Work Today
+
+The current attendance workflow is split between the web dashboard and
+`ScannerBridge`.
+
+### Attendance operations flow
+
+1. The operator signs in to the admin dashboard.
+2. The operator opens the `Attendance Desk` tab.
+3. The operator starts a new session from the dashboard.
+4. The scanner terminal logs into `ScannerBridge`.
+5. `ScannerBridge` loads the active session and matching candidates.
+6. Members scan fingers at the attendance terminal.
+7. `ScannerBridge` submits successful matches or no-match results.
+8. The dashboard refreshes and shows:
+   - live attendance events
+   - scanner check-ins
+   - manual approvals
+9. If needed, the admin uses manual approval from the dashboard.
+10. When the service ends, the admin closes the session from the dashboard.
+11. The admin can export CSV from the dashboard for reporting.
+
 ### Matching done in ScannerBridge
 
 The verification logic now lives in:
@@ -431,6 +585,9 @@ The network calls for this flow live in:
 
 ### Already implemented
 
+- web admin dashboard exists
+- member registration exists in the dashboard
+- member biometric status can be reviewed in the dashboard
 - enrollment works end to end
 - scanner-specific auth exists
 - scanner attendance endpoints exist
@@ -444,6 +601,7 @@ The network calls for this flow live in:
 
 ### Still next
 
+- add a true no-match review queue tied to verification attempts
 - improve operator-focused attendance UI and kiosk polish
 - reduce exposure of decrypted templates over time by tightening device trust and
   candidate scoping
@@ -504,26 +662,48 @@ Important backend environment variables:
 - `SCANNER_SHARED_SECRET`
 - `TEMPLATE_ENCRYPTION_KEY`
 
+Important frontend runtime assumption:
+
+- the dashboard calls the backend base URL configured in the login form
+- by default the frontend starts from `http://localhost:5000`
+
 ## Practical Startup Checklist
 
-### For enrollment
+### For member registration and enrollment
 
 1. Start the backend.
-2. Open `ScannerBridge`.
-3. Log in with admin credentials.
-4. Search/select member.
-5. Capture and enroll 2 fingers.
+2. Open the admin dashboard.
+3. Sign in with admin credentials.
+4. Open the `Members` tab.
+5. Create a department if needed.
+6. Create the member.
+7. Note the generated `AAGC` number shown in the dashboard.
+8. Select the member in the web list.
+9. Open `ScannerBridge`.
+10. Search/select the same member by `AAGC` number, name, phone, email, or
+    member ID and enroll 2 fingers.
+11. Return to the dashboard and refresh biometric status.
 
 ### For attendance matching
 
 1. Start the backend.
-2. Start an active attendance session.
-3. Log the scanner into `/api/scanner/auth/login`.
-4. Let `ScannerBridge` load `/api/scanner/attendance/active-session/matching-candidates`.
-5. Scan a live fingerprint.
-6. Let `ScannerBridge` match locally with the DigitalPersona SDK.
-7. Let `ScannerBridge` submit the result to `/api/scanner/attendance/sessions/:sessionId/scan`.
-8. Review the attendance result panel for the backend outcome.
+2. Open the admin dashboard.
+3. Start an active attendance session from the dashboard.
+4. Choose one of three attendance paths:
+   - fingerprint through `ScannerBridge`
+   - typed `AAGC` number in the dashboard
+   - manual approval for guests or exceptions
+5. For fingerprint attendance:
+   - open `ScannerBridge`
+   - log the scanner into `/api/scanner/auth/login`
+   - let `ScannerBridge` load `/api/scanner/attendance/active-session/matching-candidates`
+   - scan a live fingerprint
+   - let `ScannerBridge` match locally and submit `/api/scanner/attendance/sessions/:sessionId/scan`
+6. For number attendance:
+   - type `AAGC1`, `AAGC-1`, or just `1` into the dashboard
+   - the dashboard submits `/api/attendance/sessions/:sessionId/mark-by-number`
+7. Review live attendance in the dashboard and scanner result feedback in `ScannerBridge`.
+8. Close the session from the dashboard when service ends.
 
 ## File Maintenance Rule
 
@@ -531,6 +711,7 @@ If any of these change, this guide should be updated:
 
 - authentication flow
 - scanner routes
+- dashboard workflows
 - enrollment request/response shape
 - matching-candidate response shape
 - attendance scan submission shape
@@ -542,8 +723,11 @@ If any of these change, this guide should be updated:
 In simple terms:
 
 - the backend stores and protects biometric data
+- the web dashboard handles member registration and attendance operations
+- every member now gets a simple `AAGC` number
 - `ScannerBridge` talks to the fingerprint hardware
-- enrollment is already working
+- member registration and enrollment handoff are now working
 - scanner-driven attendance matching now works through `ScannerBridge`
-- the next development step is refining the attendance terminal experience and
-  tightening the matching workflow
+- attendance can now also be recorded by typed `AAGC` number
+- the next development step is deeper exception handling, especially no-match
+  review and approval workflows

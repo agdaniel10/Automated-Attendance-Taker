@@ -1,7 +1,9 @@
 import type { Request, Response } from "express";
+import { Prisma } from "@prisma/client";
 
 import { env } from "../config/env";
 import prisma from "../lib/prisma";
+import { buildAagcNumber, normalizeAagcNumber } from "../utils/aagcNumber";
 import { encryptBiometricTemplate } from "../utils/biometricCrypto";
 import { hasPrismaErrorCode } from "../utils/prismaError";
 import { getRouteParam } from "../utils/request";
@@ -32,6 +34,32 @@ function toPrismaBytes(buffer: Buffer): Uint8Array<ArrayBuffer> {
   return buffer as unknown as Uint8Array<ArrayBuffer>;
 }
 
+function toMemberSummary(
+  member: Prisma.MemberGetPayload<{
+    include: {
+      department: true;
+      _count: {
+        select: {
+          biometricTemplates: true;
+        };
+      };
+    };
+  }>,
+) {
+  return {
+    id: member.id,
+    aagcNumber: member.aagcNumber,
+    name: member.name,
+    phone: member.phone,
+    email: member.email,
+    biometricStatus: member.biometricStatus,
+    department: member.department,
+    enrolledFingerCount: member._count.biometricTemplates,
+    createdAt: member.createdAt,
+    updatedAt: member.updatedAt,
+  };
+}
+
 async function ensureDepartmentExists(departmentId: string): Promise<boolean> {
   const department = await prisma.department.findUnique({
     where: { id: departmentId },
@@ -40,16 +68,43 @@ async function ensureDepartmentExists(departmentId: string): Promise<boolean> {
   return Boolean(department);
 }
 
+async function getNextAagcSequence(
+  tx: Prisma.TransactionClient,
+): Promise<number> {
+  const latestMember = await tx.member.findFirst({
+    where: {
+      aagcSequence: {
+        not: null,
+      },
+    },
+    select: {
+      aagcSequence: true,
+    },
+    orderBy: {
+      aagcSequence: "desc",
+    },
+  });
+
+  return (latestMember?.aagcSequence ?? 0) + 1;
+}
+
 export async function listMembers(req: Request, res: Response): Promise<void> {
   const departmentId =
     typeof req.query.departmentId === "string" ? req.query.departmentId : undefined;
   const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  const normalizedAagcNumber = normalizeAagcNumber(search);
+  const aagcNumberFilter = normalizedAagcNumber
+    ? [{ aagcNumber: { equals: normalizedAagcNumber, mode: "insensitive" as const } }]
+    : search.toUpperCase().startsWith("AAGC")
+      ? [{ aagcNumber: { contains: search, mode: "insensitive" as const } }]
+      : [];
 
   const where = {
     ...(departmentId ? { departmentId } : {}),
     ...(search
       ? {
           OR: [
+            ...aagcNumberFilter,
             { name: { contains: search, mode: "insensitive" as const } },
             { email: { contains: search, mode: "insensitive" as const } },
             { phone: { contains: search, mode: "insensitive" as const } },
@@ -68,15 +123,10 @@ export async function listMembers(req: Request, res: Response): Promise<void> {
         },
       },
     },
-    orderBy: {
-      name: "asc",
-    },
+    orderBy: [{ aagcSequence: "asc" }, { name: "asc" }],
   });
 
-  const response = members.map((member) => ({
-    ...member,
-    enrolledFingerCount: member._count.biometricTemplates,
-  }));
+  const response = members.map(toMemberSummary);
 
   res.status(200).json(response);
 }
@@ -101,23 +151,99 @@ export async function createMember(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  try {
-    const member = await prisma.member.create({
-      data: {
-        name,
-        departmentId,
-        phone,
-        email,
-      },
-      include: {
-        department: true,
-      },
-    });
+  let isEmailConflict = false;
 
-    res.status(201).json(member);
+  try {
+    let member:
+      | Prisma.MemberGetPayload<{
+          include: {
+            department: true;
+            _count: {
+              select: {
+                biometricTemplates: true;
+              };
+            };
+          };
+        }>
+      | null = null;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        member = await prisma.$transaction(async (tx) => {
+          const nextAagcSequence = await getNextAagcSequence(tx);
+
+          return tx.member.create({
+            data: {
+              aagcSequence: nextAagcSequence,
+              aagcNumber: buildAagcNumber(nextAagcSequence),
+              name,
+              departmentId,
+              phone,
+              email,
+            },
+            include: {
+              department: true,
+              _count: {
+                select: {
+                  biometricTemplates: true,
+                },
+              },
+            },
+          });
+        });
+
+        break;
+      } catch (error) {
+        if (!hasPrismaErrorCode(error, "P2002")) {
+          throw error;
+        }
+
+        const existingEmail = await prisma.member.findUnique({
+          where: { email },
+          select: { id: true },
+        });
+
+        if (existingEmail) {
+          isEmailConflict = true;
+          break;
+        }
+
+        if (attempt === 4) {
+          throw error;
+        }
+      }
+    }
+
+    if (isEmailConflict) {
+      res.status(409).json({ message: "Email already exists." });
+      return;
+    }
+
+    if (!member) {
+      res.status(503).json({
+        message:
+          "Unable to assign an AAGC number right now. Please try creating the member again.",
+      });
+      return;
+    }
+
+    res.status(201).json(toMemberSummary(member));
   } catch (error) {
     if (hasPrismaErrorCode(error, "P2002")) {
-      res.status(409).json({ message: "Email already exists." });
+      const existingEmail = await prisma.member.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+
+      if (existingEmail) {
+        res.status(409).json({ message: "Email already exists." });
+        return;
+      }
+
+      res.status(503).json({
+        message:
+          "Unable to assign an AAGC number right now. Please try creating the member again.",
+      });
       return;
     }
 
@@ -156,6 +282,7 @@ export async function getMemberBiometrics(
 
   res.status(200).json({
     memberId: member.id,
+    aagcNumber: member.aagcNumber,
     biometricStatus: member.biometricStatus,
     enrolledFingerCount: member.biometricTemplates.length,
     templates: member.biometricTemplates,
