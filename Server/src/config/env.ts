@@ -4,6 +4,7 @@ type Env = {
   jwtSecret: string;
   adminPassword?: string;
   adminPasswordHash?: string;
+  scannerSharedSecret?: string;
   templateEncryptionKey: Buffer;
 };
 
@@ -52,6 +53,7 @@ export const env: Env = {
   jwtSecret: getRequiredEnv("JWT_SECRET"),
   adminPassword: process.env.ADMIN_PASSWORD?.trim(),
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH?.trim(),
+  scannerSharedSecret: process.env.SCANNER_SHARED_SECRET?.trim(),
   templateEncryptionKey: parseEncryptionKey(
     getRequiredEnv("TEMPLATE_ENCRYPTION_KEY"),
   ),

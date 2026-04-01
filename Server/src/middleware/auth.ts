@@ -8,22 +8,33 @@ type AdminTokenPayload = JwtPayload & {
   operatorName: string;
 };
 
+type ScannerTokenPayload = JwtPayload & {
+  role: "SCANNER";
+  deviceId: string;
+  deviceName: string;
+};
+
+function getBearerToken(authorizationHeader: string | undefined): string | null {
+  if (!authorizationHeader) {
+    return null;
+  }
+
+  const [scheme, token] = authorizationHeader.split(" ");
+  if (scheme !== "Bearer" || !token) {
+    return null;
+  }
+
+  return token;
+}
+
 export function requireAdminAuth(
   req: Request,
   res: Response,
   next: NextFunction,
 ): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
+  const token = getBearerToken(req.headers.authorization);
+  if (!token) {
     res.status(401).json({ message: "Authorization token is required." });
-    return;
-  }
-
-  const [scheme, token] = authHeader.split(" ");
-  if (scheme !== "Bearer" || !token) {
-    res
-      .status(401)
-      .json({ message: "Invalid authorization format. Use Bearer token." });
     return;
   }
 
@@ -38,6 +49,37 @@ export function requireAdminAuth(
     req.admin = {
       role: payload.role,
       operatorName: payload.operatorName,
+    };
+
+    next();
+  } catch (error) {
+    res.status(401).json({ message: "Token is invalid or expired." });
+  }
+}
+
+export function requireScannerAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const token = getBearerToken(req.headers.authorization);
+  if (!token) {
+    res.status(401).json({ message: "Authorization token is required." });
+    return;
+  }
+
+  try {
+    const payload = jwt.verify(token, env.jwtSecret) as ScannerTokenPayload;
+
+    if (payload.role !== "SCANNER" || !payload.deviceId || !payload.deviceName) {
+      res.status(403).json({ message: "Scanner access is required." });
+      return;
+    }
+
+    req.scanner = {
+      role: payload.role,
+      deviceId: payload.deviceId,
+      deviceName: payload.deviceName,
     };
 
     next();

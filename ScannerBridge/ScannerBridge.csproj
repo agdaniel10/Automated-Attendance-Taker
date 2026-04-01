@@ -48,6 +48,11 @@
       <HintPath>$(DigitalPersonaSdkDir)\DPFPShrNET.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="DPFPVerNET, Version=1.2.0.1, Culture=neutral, PublicKeyToken=4de0a9c4dcc83984, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(DigitalPersonaSdkDir)\DPFPVerNET.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
@@ -55,6 +60,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ApiClient.cs" />
+    <Compile Include="AttendanceVerificationDialog.cs" />
     <Compile Include="EnrollmentCaptureDialog.cs" />
     <Compile Include="MainForm.cs" />
     <Compile Include="Program.cs" />

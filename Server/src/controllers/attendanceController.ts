@@ -159,8 +159,9 @@ export async function scanAttendance(req: Request, res: Response): Promise<void>
   const sessionId = getRouteParam(req.params.sessionId);
   const memberId =
     typeof req.body?.memberId === "string" ? req.body.memberId.trim() : "";
-  const deviceId =
-    typeof req.body?.deviceId === "string" ? req.body.deviceId.trim() : null;
+  const requestDeviceId =
+    typeof req.body?.deviceId === "string" ? req.body.deviceId.trim() : "";
+  const deviceId = requestDeviceId || req.scanner?.deviceId || null;
   const confidenceRaw = req.body?.confidence;
   const confidence =
     typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)

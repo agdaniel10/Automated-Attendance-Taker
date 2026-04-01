@@ -7,6 +7,11 @@ declare global {
         role: "ADMIN";
         operatorName: string;
       };
+      scanner?: {
+        role: "SCANNER";
+        deviceId: string;
+        deviceName: string;
+      };
     }
   }
 }

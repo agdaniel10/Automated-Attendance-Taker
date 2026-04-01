@@ -29,3 +29,19 @@ export function encryptBiometricTemplate(
     authTag,
   };
 }
+
+export function decryptBiometricTemplate(
+  encryptedTemplate: Buffer,
+  iv: Buffer,
+  authTag: Buffer,
+  key: Buffer,
+): string {
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(authTag);
+  const templateBytes = Buffer.concat([
+    decipher.update(encryptedTemplate),
+    decipher.final(),
+  ]);
+
+  return templateBytes.toString("base64");
+}

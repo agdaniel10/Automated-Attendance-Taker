@@ -5,6 +5,8 @@ import adminAuthRoutes from "./routes/adminAuthRoutes";
 import attendanceRoutes from "./routes/attendanceRoutes";
 import departmentRoutes from "./routes/departmentRoutes";
 import memberRoutes from "./routes/memberRoutes";
+import scannerAttendanceRoutes from "./routes/scannerAttendanceRoutes";
+import scannerAuthRoutes from "./routes/scannerAuthRoutes";
 
 const app = express();
 
@@ -25,6 +27,8 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/admin/auth", adminAuthRoutes);
+app.use("/api/scanner/auth", scannerAuthRoutes);
+app.use("/api/scanner/attendance", scannerAttendanceRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/members", memberRoutes);
 app.use("/api/attendance", attendanceRoutes);

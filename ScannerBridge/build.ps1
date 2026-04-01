@@ -16,8 +16,10 @@ $compilerArgs = @(
   ("/r:" + (Join-Path $sdkDir "DPFPDevNET.dll")),
   ("/r:" + (Join-Path $sdkDir "DPFPEngNET.dll")),
   ("/r:" + (Join-Path $sdkDir "DPFPShrNET.dll")),
+  ("/r:" + (Join-Path $sdkDir "DPFPVerNET.dll")),
   (Join-Path $PSScriptRoot "Program.cs"),
   (Join-Path $PSScriptRoot "ApiClient.cs"),
+  (Join-Path $PSScriptRoot "AttendanceVerificationDialog.cs"),
   (Join-Path $PSScriptRoot "EnrollmentCaptureDialog.cs"),
   (Join-Path $PSScriptRoot "MainForm.cs"),
   (Join-Path $PSScriptRoot "Properties\AssemblyInfo.cs")
@@ -32,7 +34,8 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item `
   (Join-Path $sdkDir "DPFPDevNET.dll"),
   (Join-Path $sdkDir "DPFPEngNET.dll"),
-  (Join-Path $sdkDir "DPFPShrNET.dll") `
+  (Join-Path $sdkDir "DPFPShrNET.dll"),
+  (Join-Path $sdkDir "DPFPVerNET.dll") `
   -Destination $outputDir `
   -Force
 

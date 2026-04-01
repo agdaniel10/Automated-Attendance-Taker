@@ -1,11 +1,15 @@
 # Fingerprint Scanner Integration Notes
 
+For the detailed backend and `ScannerBridge` communication guide, see:
+
+- `docs/scanner-backend-guide.md`
+
 ## Current hardware status
 
 - Detected reader: `U.are.U 4500 Fingerprint Reader`
-- Windows biometric device entry: `U.are.U 4500 Fingerprint Reader (WBF)` with status `OK`
-- Installed driver found in Windows uninstall registry:
-  - `Crossmatch U.are.U Fingerprint Driver (WBF) 5.0.0.5`
+- The reader is now working with the DigitalPersona One Touch SDK path for app
+  capture and verification
+- Enrollment capture has been verified end to end through `ScannerBridge`
 
 ## What the backend already supports
 
@@ -24,20 +28,21 @@ The enrollment endpoint expects:
 The template is encrypted before storage in
 `Server/src/controllers/memberController.ts`.
 
-## Important gap
+## What now works in ScannerBridge
 
-The project does **not** yet contain a scanner capture layer or a fingerprint
-matching engine.
+The desktop bridge now supports both:
 
-That means:
+1. fingerprint enrollment for member registration
+2. fingerprint verification for attendance matching
 
-1. The scanner cannot yet capture a print inside this application.
-2. The attendance flow cannot yet identify a person from a fresh scan.
-3. Installing only the Windows driver is not enough for app-side enrollment.
+That means the project now has:
 
-Right now, the attendance endpoint
-`POST /api/attendance/sessions/:sessionId/scan` expects a `memberId` that was
-already identified somewhere else.
+- a scanner capture layer in `ScannerBridge`
+- template creation for enrollment
+- scanner-specific authentication for attendance terminals
+- candidate loading for local verification
+- local matching against enrolled templates
+- attendance submission back to the backend after match/no-match
 
 ## Recommended architecture
 
@@ -94,22 +99,60 @@ This is useful for:
 But it is not the best long-term fit for the current backend unless we also
 decide how template extraction and matching will work for our own database.
 
-## Current project implication
+## Backend contracts now added
 
-Enrollment is closer than attendance:
+The backend now exposes scanner-specific routes used by the current attendance
+matching flow:
 
-- Enrollment backend is already ready once we can produce a template.
-- Attendance still needs trusted matching logic, not just capture.
+- `POST /api/scanner/auth/login`
+- `GET /api/scanner/auth/me`
+- `GET /api/scanner/attendance/active-session`
+- `GET /api/scanner/attendance/active-session/matching-candidates`
+- `POST /api/scanner/attendance/sessions/:sessionId/scan`
+
+What these are for:
+
+- scanner login uses a shared secret and returns a scanner JWT
+- active session returns the currently open attendance session
+- matching candidates returns enrolled members plus decrypted template payloads
+  for trusted local matching in the scanner app
+- scanner attendance submission records a match or no-match using scanner auth
+
+Configuration needed:
+
+- set `SCANNER_SHARED_SECRET` in `Server/.env`
+- restart the backend after changing scanner auth settings
+
+## Current operator flow
+
+### Registration / enrollment
+
+1. Start the backend.
+2. Open `ScannerBridge`.
+3. Log in with the admin password.
+4. Search for and select a member.
+5. Choose a finger position.
+6. Click `Capture and Enroll`.
+7. Repeat until two fingers are enrolled and the member becomes `ENROLLED`.
+
+### Attendance matching
+
+1. Start an attendance session in the backend.
+2. Open `ScannerBridge`.
+3. Enter the scanner device details and shared secret.
+4. Click `Scanner Login`.
+5. Let the app load the active session and matching candidates.
+6. Click `Scan and Mark Attendance`.
+7. Place a registered finger on the scanner once.
+8. Let the app verify locally and submit the result to the backend.
 
 ## Next build step
 
-The next meaningful implementation task is to build a **scanner bridge** for
-enrollment first, then extend the attendance flow with matching.
+The next meaningful implementation task is to refine the attendance terminal
+experience now that matching is wired in.
 
-Recommended first deliverable:
+Recommended next improvements:
 
-- a local enrollment utility/page that captures a fingerprint from the
-  `U.are.U 4500`
-- extracts a template
-- uploads it to `POST /api/members/:memberId/biometrics`
-
+- kiosk/operator polish for the attendance view
+- clearer duplicate/no-match feedback
+- tighter candidate scoping and security hardening around decrypted templates
