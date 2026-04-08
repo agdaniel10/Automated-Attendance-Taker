@@ -4,6 +4,7 @@ import {
   adminApproveAttendance,
   closeSession,
   exportSessionCsv,
+  listReviewQueue,
   listSessionEvents,
   listSessions,
   markAttendanceByAagcNumber,
@@ -20,6 +21,7 @@ router.get("/sessions", listSessions);
 router.post("/sessions", startSession);
 router.post("/sessions/:sessionId/close", closeSession);
 router.get("/sessions/:sessionId/events", listSessionEvents);
+router.get("/sessions/:sessionId/review-queue", listReviewQueue);
 router.post("/sessions/:sessionId/scan", scanAttendance);
 router.post("/sessions/:sessionId/mark-by-number", markAttendanceByAagcNumber);
 router.post("/sessions/:sessionId/admin-approve", adminApproveAttendance);

@@ -16,6 +16,7 @@ export async function listDepartments(
   })
 }
 
+
 export async function createDepartment(
   baseUrl: string,
   token: string,

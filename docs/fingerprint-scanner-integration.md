@@ -51,10 +51,13 @@ The React admin dashboard now supports:
 - admin login
 - department setup
 - member registration
+- automatic `AAGC` number assignment like `AAGC1`
 - member list and search
 - biometric status lookup for a selected member
 - attendance session start and close
 - live attendance monitoring
+- attendance fallback by typed `AAGC` number
+- no-match review queue for failed fingerprint scans
 - manual approval
 - CSV export
 
@@ -150,33 +153,48 @@ Configuration needed:
 4. Open the `Members` tab.
 5. Create a department if needed.
 6. Create the member in the web app.
-7. Select the member and note or copy the member ID.
-8. Open `ScannerBridge`.
-9. Search for and select the same member.
-10. Choose a finger position.
-11. Click `Capture and Enroll`.
-12. Repeat until two fingers are enrolled and the member becomes `ENROLLED`.
-13. Return to the web app and refresh biometric status if needed.
+7. The backend assigns a simple church number like `AAGC1`.
+8. Select the member and note the `AAGC` number or copy the member ID.
+9. Open `ScannerBridge`.
+10. Search for and select the same member by `AAGC` number, name, phone, email,
+    or member ID.
+11. Choose a finger position.
+12. Click `Capture and Enroll`.
+13. Repeat until two fingers are enrolled and the member becomes `ENROLLED`.
+14. Return to the web app and refresh biometric status if needed.
 
 ### Attendance matching
 
 1. Start an attendance session from the admin dashboard.
-2. Open `ScannerBridge`.
-3. Enter the scanner device details and shared secret.
-4. Click `Scanner Login`.
-5. Let the app load the active session and matching candidates.
-6. Click `Scan and Mark Attendance`.
-7. Place a registered finger on the scanner once.
-8. Let the app verify locally and submit the result to the backend.
-9. Review live attendance from the dashboard.
+2. Choose the attendance path:
+   - fingerprint in `ScannerBridge`
+   - typed `AAGC` number in the dashboard
+   - manual approval for exceptions
+3. For fingerprint attendance:
+   - open `ScannerBridge`
+   - enter the scanner device details and shared secret
+   - click `Scanner Login`
+   - let the app load the active session and matching candidates
+   - click `Scan and Mark Attendance`
+   - place a registered finger on the scanner once
+   - let the app verify locally and submit the result to the backend
+4. For number attendance:
+   - type `AAGC1`, `AAGC-1`, or just `1` in the dashboard
+   - the backend normalizes that input and records attendance for the matched
+     member
+5. For failed fingerprint scans:
+   - review the no-match queue in the dashboard
+   - select the pending scanner case
+   - approve it as the linked member or enter a guest/manual name
+6. Review live attendance from the dashboard.
 
 ## Next build step
 
-The next meaningful implementation task is deeper exception handling around
-scanner no-match cases and verification review.
+The next meaningful implementation task is deeper exception history and
+security hardening around scanner matching candidates.
 
 Recommended next improvements:
 
-- no-match review queue for admins
 - tighter candidate scoping and security hardening around decrypted templates
+- reviewed no-match history/reporting
 - more polished attendance terminal/kiosk views

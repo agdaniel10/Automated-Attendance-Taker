@@ -326,6 +326,7 @@ That means:
 - `POST /api/attendance/sessions`
 - `POST /api/attendance/sessions/:sessionId/close`
 - `GET /api/attendance/sessions/:sessionId/events`
+- `GET /api/attendance/sessions/:sessionId/review-queue`
 - `POST /api/attendance/sessions/:sessionId/mark-by-number`
 - `POST /api/attendance/sessions/:sessionId/admin-approve`
 - `GET /api/attendance/sessions/:sessionId/export.csv`
@@ -342,6 +343,7 @@ The admin dashboard can now:
 - start attendance sessions
 - close attendance sessions
 - show live attendance feed
+- review pending no-match cases from scanner attempts
 - mark attendance by typed `AAGC` number
 - inspect recent session history
 - manually approve attendance
@@ -702,8 +704,13 @@ Important frontend runtime assumption:
 6. For number attendance:
    - type `AAGC1`, `AAGC-1`, or just `1` into the dashboard
    - the dashboard submits `/api/attendance/sessions/:sessionId/mark-by-number`
-7. Review live attendance in the dashboard and scanner result feedback in `ScannerBridge`.
-8. Close the session from the dashboard when service ends.
+7. For no-match review:
+   - open the dashboard review queue
+   - select a failed fingerprint attempt
+   - approve it either as the linked member or as a typed guest/manual exception
+   - the dashboard submits `/api/attendance/sessions/:sessionId/admin-approve`
+8. Review live attendance in the dashboard and scanner result feedback in `ScannerBridge`.
+9. Close the session from the dashboard when service ends.
 
 ## File Maintenance Rule
 
@@ -729,5 +736,6 @@ In simple terms:
 - member registration and enrollment handoff are now working
 - scanner-driven attendance matching now works through `ScannerBridge`
 - attendance can now also be recorded by typed `AAGC` number
-- the next development step is deeper exception handling, especially no-match
-  review and approval workflows
+- admins can now review pending no-match scanner attempts from the dashboard
+- the next development step is tighter exception history/reporting and candidate
+  scoping

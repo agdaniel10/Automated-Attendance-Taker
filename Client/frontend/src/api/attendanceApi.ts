@@ -6,6 +6,8 @@ import type {
   AttendanceSession,
   ManualApprovalInput,
   ManualApprovalResult,
+  ReviewQueueResponse,
+  ReviewQueueStatus,
   StartSessionInput,
 } from '../types/dashboard'
 
@@ -56,6 +58,21 @@ export async function listSessionEvents(
   return requestJson<AttendanceEvent[]>(
     baseUrl,
     `/api/attendance/sessions/${encodeURIComponent(sessionId)}/events`,
+    {
+      token,
+    },
+  )
+}
+
+export async function listReviewQueue(
+  baseUrl: string,
+  token: string,
+  sessionId: string,
+  status: ReviewQueueStatus = 'PENDING',
+): Promise<ReviewQueueResponse> {
+  return requestJson<ReviewQueueResponse>(
+    baseUrl,
+    `/api/attendance/sessions/${encodeURIComponent(sessionId)}/review-queue?status=${encodeURIComponent(status)}`,
     {
       token,
     },

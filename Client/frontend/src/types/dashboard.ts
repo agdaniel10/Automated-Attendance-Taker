@@ -47,13 +47,21 @@ export interface StartSessionInput {
 export interface ManualApprovalInput {
   displayName: string
   notes: string
+  attemptId?: string
 }
 
 export interface ManualApprovalResult {
   status: string
-  attendanceEventId: string
+  attendanceEventId?: string
   message: string
-  occurredAt: string
+  occurredAt?: string
+  reviewedAttemptId?: string | null
+  member?: {
+    id: string
+    aagcNumber: string | null
+    name: string
+    department: string
+  } | null
 }
 
 export interface AttendanceMarkByNumberInput {
@@ -71,6 +79,40 @@ export interface AttendanceMarkResult {
     name: string
     department: string
   }
+}
+
+export type ReviewQueueStatus = 'PENDING' | 'APPROVED' | 'ALL'
+
+export interface ReviewQueueItem {
+  id: string
+  occurredAt: string
+  outcome: 'NO_MATCH' | 'ADMIN_APPROVED' | string
+  reviewStatus: 'PENDING' | 'APPROVED'
+  deviceId: string | null
+  confidence: number | null
+  notes: string | null
+  approvedBy: string | null
+  approvedAt: string | null
+  matchedMember: {
+    id: string
+    aagcNumber: string | null
+    name: string
+    department: string | null
+    phone: string | null
+    email: string | null
+    biometricStatus: string
+  } | null
+}
+
+export interface ReviewQueueResponse {
+  session: {
+    id: string
+    status: SessionStatus
+    programName: string
+  }
+  status: ReviewQueueStatus
+  itemCount: number
+  items: ReviewQueueItem[]
 }
 
 export interface DashboardNotice {

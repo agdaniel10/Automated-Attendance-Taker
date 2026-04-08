@@ -18,12 +18,68 @@ const VERIFICATION_OUTCOME = {
   ADMIN_APPROVED: "ADMIN_APPROVED",
 } as const;
 
+const REVIEW_QUEUE_STATUS = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  ALL: "ALL",
+} as const;
+
 const SESSION_STATUS = {
   ACTIVE: "ACTIVE",
   CLOSED: "CLOSED",
 } as const;
 
 type SessionStatus = (typeof SESSION_STATUS)[keyof typeof SESSION_STATUS];
+type ReviewQueueStatus =
+  (typeof REVIEW_QUEUE_STATUS)[keyof typeof REVIEW_QUEUE_STATUS];
+
+function mapAttendanceMember(member: any) {
+  if (!member) {
+    return null;
+  }
+
+  return {
+    id: member.id,
+    aagcNumber: member.aagcNumber ?? null,
+    name: member.name,
+    department: member.department?.name ?? "Unknown",
+  };
+}
+
+function parseReviewQueueStatus(value: unknown): ReviewQueueStatus {
+  const normalized =
+    typeof value === "string" ? value.trim().toUpperCase() : REVIEW_QUEUE_STATUS.PENDING;
+
+  if (
+    normalized === REVIEW_QUEUE_STATUS.PENDING ||
+    normalized === REVIEW_QUEUE_STATUS.APPROVED ||
+    normalized === REVIEW_QUEUE_STATUS.ALL
+  ) {
+    return normalized;
+  }
+
+  return REVIEW_QUEUE_STATUS.PENDING;
+}
+
+function buildReviewQueueWhere(status: ReviewQueueStatus) {
+  if (status === REVIEW_QUEUE_STATUS.APPROVED) {
+    return {
+      outcome: VERIFICATION_OUTCOME.ADMIN_APPROVED,
+    };
+  }
+
+  if (status === REVIEW_QUEUE_STATUS.ALL) {
+    return {
+      outcome: {
+        in: [VERIFICATION_OUTCOME.NO_MATCH, VERIFICATION_OUTCOME.ADMIN_APPROVED],
+      },
+    };
+  }
+
+  return {
+    outcome: VERIFICATION_OUTCOME.NO_MATCH,
+  };
+}
 
 export async function listSessions(req: Request, res: Response): Promise<void> {
   const statusQuery =
@@ -156,6 +212,80 @@ export async function listSessionEvents(
   }));
 
   res.status(200).json(response);
+}
+
+export async function listReviewQueue(req: Request, res: Response): Promise<void> {
+  const sessionId = getRouteParam(req.params.sessionId);
+  const status = parseReviewQueueStatus(req.query.status);
+
+  const session = await prisma.attendanceSession.findUnique({
+    where: { id: sessionId },
+    select: {
+      id: true,
+      status: true,
+      programName: true,
+    },
+  });
+
+  if (!session) {
+    res.status(404).json({ message: "Attendance session not found." });
+    return;
+  }
+
+  const attempts = await prisma.verificationAttempt.findMany({
+    where: {
+      sessionId,
+      ...buildReviewQueueWhere(status),
+    },
+    include: {
+      matchedMember: {
+        include: {
+          department: true,
+        },
+      },
+    },
+    orderBy: {
+      occurredAt: "desc",
+    },
+    take: status === REVIEW_QUEUE_STATUS.PENDING ? 100 : 150,
+  });
+
+  const response = attempts.map((attempt: any) => ({
+    id: attempt.id,
+    occurredAt: attempt.occurredAt,
+    outcome: attempt.outcome,
+    reviewStatus:
+      attempt.outcome === VERIFICATION_OUTCOME.ADMIN_APPROVED
+        ? REVIEW_QUEUE_STATUS.APPROVED
+        : REVIEW_QUEUE_STATUS.PENDING,
+    deviceId: attempt.deviceId,
+    confidence: attempt.confidence,
+    notes: attempt.notes,
+    approvedBy: attempt.approvedBy,
+    approvedAt: attempt.approvedAt,
+    matchedMember: attempt.matchedMember
+      ? {
+          id: attempt.matchedMember.id,
+          aagcNumber: attempt.matchedMember.aagcNumber ?? null,
+          name: attempt.matchedMember.name,
+          department: attempt.matchedMember.department?.name ?? null,
+          phone: attempt.matchedMember.phone,
+          email: attempt.matchedMember.email,
+          biometricStatus: attempt.matchedMember.biometricStatus,
+        }
+      : null,
+  }));
+
+  res.status(200).json({
+    session: {
+      id: session.id,
+      status: session.status,
+      programName: session.programName,
+    },
+    status,
+    itemCount: response.length,
+    items: response,
+  });
 }
 
 export async function scanAttendance(req: Request, res: Response): Promise<void> {
@@ -463,16 +593,11 @@ export async function adminApproveAttendance(
   res: Response,
 ): Promise<void> {
   const sessionId = getRouteParam(req.params.sessionId);
-  const displayName =
+  const displayNameInput =
     typeof req.body?.displayName === "string" ? req.body.displayName.trim() : "";
   const notes = typeof req.body?.notes === "string" ? req.body.notes.trim() : null;
   const attemptId =
     typeof req.body?.attemptId === "string" ? req.body.attemptId.trim() : null;
-
-  if (!displayName) {
-    res.status(400).json({ message: "displayName is required." });
-    return;
-  }
 
   const session = await prisma.attendanceSession.findUnique({
     where: { id: sessionId },
@@ -489,13 +614,94 @@ export async function adminApproveAttendance(
     return;
   }
 
+  let attempt: any = null;
+
+  if (attemptId) {
+    attempt = await prisma.verificationAttempt.findFirst({
+      where: {
+        id: attemptId,
+        sessionId,
+      },
+      include: {
+        matchedMember: {
+          include: {
+            department: true,
+          },
+        },
+      },
+    });
+
+    if (!attempt) {
+      res.status(404).json({ message: "Verification attempt not found." });
+      return;
+    }
+
+    if (attempt.outcome === VERIFICATION_OUTCOME.ADMIN_APPROVED || attempt.approvedAt) {
+      res.status(409).json({
+        message: "This no-match attempt has already been reviewed.",
+      });
+      return;
+    }
+  }
+
+  const member = attempt?.matchedMember ?? null;
+  const displayName = member?.name ?? (displayNameInput || "");
+
+  if (!displayName) {
+    res.status(400).json({
+      message: "displayName is required when the selected no-match case has no linked member.",
+    });
+    return;
+  }
+
+  if (member) {
+    const existingEvent = await prisma.attendanceEvent.findFirst({
+      where: {
+        sessionId,
+        memberId: member.id,
+      },
+      select: {
+        id: true,
+        occurredAt: true,
+      },
+    });
+
+    if (existingEvent) {
+      if (attemptId) {
+        await prisma.verificationAttempt.updateMany({
+          where: {
+            id: attemptId,
+            sessionId,
+          },
+          data: {
+            outcome: VERIFICATION_OUTCOME.ADMIN_APPROVED,
+            approvedBy: req.admin?.operatorName ?? "Admin Operator",
+            approvedAt: new Date(),
+            notes:
+              notes ??
+              "No-match attempt reviewed by admin after attendance had already been recorded.",
+          },
+        });
+      }
+
+      res.status(200).json({
+        status: "already_marked",
+        message: `${member.name}, your attendance has already been recorded.`,
+        member: mapAttendanceMember(member),
+        markedAt: existingEvent.occurredAt,
+        reviewedAttemptId: attemptId,
+      });
+      return;
+    }
+  }
+
   const welcomeMessage = `${displayName}, welcome to service`;
 
   const result = await prisma.$transaction(async (tx: any) => {
     const event = await tx.attendanceEvent.create({
       data: {
         sessionId,
-        guestName: displayName,
+        ...(member ? { memberId: member.id } : { guestName: displayName }),
         source: ATTENDANCE_SOURCE.ADMIN_APPROVAL,
         message: welcomeMessage,
       },
@@ -524,6 +730,8 @@ export async function adminApproveAttendance(
     attendanceEventId: result.id,
     message: welcomeMessage,
     occurredAt: result.occurredAt,
+    member: mapAttendanceMember(member),
+    reviewedAttemptId: attemptId,
   });
 }
 

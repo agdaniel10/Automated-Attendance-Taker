@@ -25,6 +25,8 @@ This area lets admins:
 - start an attendance session
 - close an attendance session
 - monitor live attendance events
+- mark attendance by typed `AAGC` number
+- review pending no-match fingerprint cases
 - review past sessions
 - export session CSV files
 - manually approve attendance when needed
@@ -35,6 +37,7 @@ This area lets admins:
 
 - create departments
 - register new members
+- automatically assign simple member numbers like `AAGC1`
 - search the member list
 - view biometric enrollment status
 - select a member and continue fingerprint enrollment in `ScannerBridge`
@@ -44,13 +47,18 @@ This area lets admins:
 The full project currently works like this:
 
 1. Use the web dashboard to create a member.
-2. The member appears immediately in the web member list.
-3. Open `ScannerBridge` on the enrollment computer.
-4. Search/select that member and enroll two fingerprints.
-5. Return to the web dashboard and refresh biometric status.
-6. Start attendance sessions from the web dashboard.
-7. Use `ScannerBridge` as the fingerprint attendance terminal.
-8. Review live attendance in the web dashboard.
+2. The backend assigns an `AAGC` number like `AAGC1`.
+3. The member appears immediately in the web member list.
+4. Open `ScannerBridge` on the enrollment computer.
+5. Search/select that member by `AAGC` number, name, phone, email, or member ID
+   and enroll two fingerprints.
+6. Return to the web dashboard and refresh biometric status.
+7. Start attendance sessions from the web dashboard.
+8. Use either `ScannerBridge` for fingerprint attendance or the dashboard form
+   for typed `AAGC` number attendance.
+9. Review any failed fingerprint scans in the no-match queue and approve them
+   from the dashboard.
+10. Review live attendance in the web dashboard.
 
 ## API Structure
 
@@ -104,8 +112,5 @@ setup.
 
 ## Current Limitation
 
-The dashboard does not yet have a dedicated no-match review queue backed by
-verification-attempt listing from the server.
-
-Manual approval is already available, but deeper no-match review is still a
-next step.
+The dashboard now has a no-match review queue, but it does not yet provide a
+full reviewed-attempt history screen or richer scanner-security analytics.

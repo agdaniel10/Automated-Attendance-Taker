@@ -5,6 +5,7 @@ import {
   closeSession,
   exportSessionCsv,
   listSessionEvents,
+  listReviewQueue,
   listSessions,
   manualApproveAttendance,
   markAttendanceByNumber,
@@ -23,6 +24,7 @@ import { ManualApprovalCard } from './components/ManualApprovalCard'
 import { MemberCreateForm } from './components/MemberCreateForm'
 import { MemberListTable } from './components/MemberListTable'
 import { MetricCard } from './components/MetricCard'
+import { ReviewQueueCard } from './components/ReviewQueueCard'
 import { SessionHistoryTable } from './components/SessionHistoryTable'
 import { SessionStartForm } from './components/SessionStartForm'
 import { SessionSummaryCard } from './components/SessionSummaryCard'
@@ -46,6 +48,7 @@ import type {
   DashboardNotice,
   MemberBiometrics,
   MemberSummary,
+  ReviewQueueItem,
   StoredAdminSession,
 } from './types/dashboard'
 
@@ -87,6 +90,8 @@ function App() {
   const [selectedSessionId, setSelectedSessionId] = useState('')
   const [activeEvents, setActiveEvents] = useState<AttendanceEvent[]>([])
   const [selectedSessionEvents, setSelectedSessionEvents] = useState<AttendanceEvent[]>([])
+  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
+  const [selectedReviewAttemptId, setSelectedReviewAttemptId] = useState('')
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
   const [members, setMembers] = useState<MemberSummary[]>([])
   const [selectedMemberId, setSelectedMemberId] = useState('')
@@ -123,6 +128,7 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isRefreshingMembers, setIsRefreshingMembers] = useState(false)
   const [isRefreshingBiometrics, setIsRefreshingBiometrics] = useState(false)
+  const [isRefreshingReviewQueue, setIsRefreshingReviewQueue] = useState(false)
   const [isStartingSession, setIsStartingSession] = useState(false)
   const [isClosingSession, setIsClosingSession] = useState(false)
   const [isApproving, setIsApproving] = useState(false)
@@ -149,6 +155,7 @@ function App() {
   const liveManualCount = activeEvents.filter(
     (event) => event.source === 'ADMIN_APPROVAL',
   ).length
+  const pendingReviewCount = reviewQueue.length
   const enrolledMembersCount = members.filter(
     (member) => member.biometricStatus === 'ENROLLED',
   ).length
@@ -162,6 +169,7 @@ function App() {
     }
 
     setIsRefreshing(true)
+    setIsRefreshingReviewQueue(true)
 
     try {
       const nextSessions = await listSessions(authSession.baseUrl, authSession.token)
@@ -185,20 +193,41 @@ function App() {
       )
 
       const eventsBySession = new Map<string, AttendanceEvent[]>()
+      let nextReviewQueue: ReviewQueueItem[] = []
 
       await Promise.all(
-        sessionIdsToLoad.map(async (sessionId) => {
-          const events = await listSessionEvents(
-            authSession.baseUrl,
-            authSession.token,
-            sessionId,
-          )
-          eventsBySession.set(sessionId, events)
-        }),
+        [
+          ...sessionIdsToLoad.map(async (sessionId) => {
+            const events = await listSessionEvents(
+              authSession.baseUrl,
+              authSession.token,
+              sessionId,
+            )
+            eventsBySession.set(sessionId, events)
+          }),
+          ...(nextActiveSession
+            ? [
+                (async () => {
+                  const queue = await listReviewQueue(
+                    authSession.baseUrl,
+                    authSession.token,
+                    nextActiveSession.id,
+                  )
+                  nextReviewQueue = queue.items
+                })(),
+              ]
+            : []),
+        ],
       )
 
       setSessions(nextSessions)
       setSelectedSessionId(nextSelectedSessionId)
+      setReviewQueue(nextReviewQueue)
+      setSelectedReviewAttemptId((currentSelectedId) =>
+        nextReviewQueue.some((attempt) => attempt.id === currentSelectedId)
+          ? currentSelectedId
+          : '',
+      )
       setActiveEvents(
         nextActiveSession ? eventsBySession.get(nextActiveSession.id) ?? [] : [],
       )
@@ -226,6 +255,7 @@ function App() {
       })
     } finally {
       setIsRefreshing(false)
+      setIsRefreshingReviewQueue(false)
     }
   }
 
@@ -252,6 +282,47 @@ function App() {
     })
 
     return nextDepartments
+  }
+
+  async function refreshReviewQueue(sessionId?: string): Promise<void> {
+    if (!authSession) {
+      return
+    }
+
+    const targetSessionId = sessionId ?? activeSession?.id ?? ''
+    if (!targetSessionId) {
+      setReviewQueue([])
+      setSelectedReviewAttemptId('')
+      return
+    }
+
+    setIsRefreshingReviewQueue(true)
+
+    try {
+      const queue = await listReviewQueue(
+        authSession.baseUrl,
+        authSession.token,
+        targetSessionId,
+      )
+
+      setReviewQueue(queue.items)
+      setSelectedReviewAttemptId((currentSelectedId) =>
+        queue.items.some((attempt) => attempt.id === currentSelectedId)
+          ? currentSelectedId
+          : '',
+      )
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Review queue refresh failed',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Unable to load no-match review cases right now.',
+      })
+    } finally {
+      setIsRefreshingReviewQueue(false)
+    }
   }
 
   async function refreshMembers(preferredMemberId?: string): Promise<void> {
@@ -410,6 +481,8 @@ function App() {
     setSelectedSessionId('')
     setActiveEvents([])
     setSelectedSessionEvents([])
+    setReviewQueue([])
+    setSelectedReviewAttemptId('')
     setDepartments([])
     setMembers([])
     setSelectedMemberId('')
@@ -497,17 +570,27 @@ function App() {
         authSession.baseUrl,
         authSession.token,
         activeSession.id,
-        manualForm,
+        {
+          ...manualForm,
+          attemptId: selectedReviewAttemptId || undefined,
+        },
       )
 
       setManualForm({
         displayName: '',
         notes: '',
       })
+      setSelectedReviewAttemptId('')
       setNotice({
-        tone: 'success',
-        title: 'Attendance approved',
-        description: result.message,
+        tone: result.status === 'already_marked' ? 'warning' : 'success',
+        title:
+          result.status === 'already_marked'
+            ? 'Attendance already recorded'
+            : 'Attendance approved',
+        description:
+          result.member?.aagcNumber && result.member?.name
+            ? `${result.member.name} (${result.member.aagcNumber})`
+            : result.message,
       })
       await refreshDashboard(activeSession.id)
     } catch (error) {
@@ -520,6 +603,27 @@ function App() {
     } finally {
       setIsApproving(false)
     }
+  }
+
+  function handleSelectReviewAttempt(attemptId: string): void {
+    const attempt = reviewQueue.find((item) => item.id === attemptId)
+    if (!attempt) {
+      return
+    }
+
+    setSelectedReviewAttemptId(attempt.id)
+    setManualForm({
+      displayName: attempt.matchedMember?.name ?? '',
+      notes: attempt.notes ?? '',
+    })
+  }
+
+  function handleClearSelectedReviewAttempt(): void {
+    setSelectedReviewAttemptId('')
+    setManualForm({
+      displayName: '',
+      notes: '',
+    })
   }
 
   async function handleMarkAttendanceByNumber(
@@ -715,6 +819,8 @@ function App() {
 
   const selectedMember =
     members.find((member) => member.id === selectedMemberId) ?? null
+  const selectedReviewAttempt =
+    reviewQueue.find((attempt) => attempt.id === selectedReviewAttemptId) ?? null
 
   if (!authSession) {
     return (
@@ -804,7 +910,7 @@ function App() {
 
         {activeView === 'attendance' ? (
           <>
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
               <MetricCard
                 label="Active Service"
                 value={activeSession ? activeSession.programName : 'None'}
@@ -828,6 +934,11 @@ function App() {
                 label="Manual Approvals"
                 value={String(liveManualCount)}
                 hint="Approvals handled from the admin dashboard"
+              />
+              <MetricCard
+                label="Review Queue"
+                value={String(pendingReviewCount)}
+                hint="Pending failed fingerprint scans awaiting review"
               />
               <MetricCard
                 label="All Records"
@@ -919,17 +1030,27 @@ function App() {
                   onSubmit={handleMarkAttendanceByNumber}
                 />
 
+                <ReviewQueueCard
+                  attempts={reviewQueue}
+                  selectedAttemptId={selectedReviewAttemptId}
+                  isRefreshing={isRefreshingReviewQueue}
+                  onRefresh={() => void refreshReviewQueue()}
+                  onSelectAttempt={handleSelectReviewAttempt}
+                />
+
                 <ManualApprovalCard
                   hasActiveSession={Boolean(activeSession)}
                   displayName={manualForm.displayName}
                   notes={manualForm.notes}
                   isSubmitting={isApproving}
+                  selectedAttempt={selectedReviewAttempt}
                   onDisplayNameChange={(value) =>
                     setManualForm((currentForm) => ({ ...currentForm, displayName: value }))
                   }
                   onNotesChange={(value) =>
                     setManualForm((currentForm) => ({ ...currentForm, notes: value }))
                   }
+                  onClearSelectedAttempt={handleClearSelectedReviewAttempt}
                   onSubmit={handleManualApproval}
                 />
 
@@ -959,6 +1080,13 @@ function App() {
                       <p className="mt-1">
                         Reserve manual approval for guests or true exceptions. Use the
                         AAGC number card when a member knows their church number.
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="font-semibold text-slate-900">4. Clear the review queue</p>
+                      <p className="mt-1">
+                        When a fingerprint scan fails, select it from the no-match queue
+                        and approve it intentionally so unresolved cases do not pile up.
                       </p>
                     </div>
                   </div>
