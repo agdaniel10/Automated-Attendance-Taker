@@ -70,8 +70,49 @@ export function AttendanceEventsTable({
           <p className="mt-2 text-sm leading-6 text-slate-500">{emptyDescription}</p>
         </div>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-slate-200">
-          <div className="overflow-x-auto">
+        <>
+          <div className="mt-6 space-y-4 md:hidden">
+            {events.map((event) => (
+              <article
+                key={event.id}
+                className="rounded-[1.35rem] border border-slate-200 bg-slate-50/80 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-950">{event.name}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {event.aagcNumber
+                        ? `${event.aagcNumber} | ${event.email || event.phone || 'No contact details'}`
+                        : event.email || event.phone || 'No contact details'}
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] ${statusTone(event.source)}`}
+                  >
+                    {sourceLabel(event.source)}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                  <p>
+                    <span className="font-medium text-slate-900">Department:</span>{' '}
+                    {event.department || 'Not assigned'}
+                  </p>
+                  <p>
+                    <span className="font-medium text-slate-900">Time:</span>{' '}
+                    {formatDateTime(event.occurredAt)}
+                  </p>
+                </div>
+
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  {event.message || 'No message'}
+                </p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-6 hidden overflow-hidden rounded-[1.5rem] border border-slate-200 md:block">
+            <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
@@ -111,8 +152,9 @@ export function AttendanceEventsTable({
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </section>
   )

@@ -825,14 +825,10 @@ function App() {
   if (!authSession) {
     return (
       <LoginScreen
-        apiBaseUrl={loginForm.apiBaseUrl}
         operatorName={loginForm.operatorName}
         password={loginForm.password}
         isSubmitting={isLoggingIn}
         errorMessage={loginError}
-        onApiBaseUrlChange={(value) =>
-          setLoginForm((currentForm) => ({ ...currentForm, apiBaseUrl: value }))
-        }
         onOperatorNameChange={(value) =>
           setLoginForm((currentForm) => ({ ...currentForm, operatorName: value }))
         }
@@ -845,9 +841,9 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,248,232,0.85),_rgba(255,255,255,0.96)_42%),linear-gradient(180deg,_#fffdf8_0%,_#ffffff_100%)] px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="relative overflow-hidden rounded-[2.2rem] border border-white/80 bg-white px-6 py-6 shadow-[0_32px_80px_-46px_rgba(15,23,42,0.48)] sm:px-8">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,248,232,0.85),_rgba(255,255,255,0.96)_42%),linear-gradient(180deg,_#fffdf8_0%,_#ffffff_100%)] px-3 py-4 text-slate-900 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-5 sm:space-y-6">
+        <header className="relative overflow-hidden rounded-[1.75rem] border border-white/80 bg-white px-4 py-5 shadow-[0_32px_80px_-46px_rgba(15,23,42,0.48)] sm:rounded-[2.2rem] sm:px-6 sm:py-6 lg:px-8">
           <div className="absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.16),_transparent_70%)]" />
           <div className="relative flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
             <div className="space-y-5">
@@ -857,12 +853,9 @@ function App() {
                   A beautiful white operations dashboard for service attendance,
                   built around your current backend, scanner terminal, and export flow.
                 </p>
-                <div className="flex flex-wrap gap-3 text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+                <div className="flex flex-wrap gap-2 text-[11px] font-medium uppercase tracking-[0.22em] text-slate-400 sm:gap-3 sm:text-xs sm:tracking-[0.25em]">
                   <span className="rounded-full bg-slate-100 px-3 py-2 text-slate-600">
                     Operator {authSession.operatorName}
-                  </span>
-                  <span className="rounded-full bg-amber-50 px-3 py-2 text-amber-700">
-                    API {authSession.baseUrl}
                   </span>
                   <span className="rounded-full bg-slate-100 px-3 py-2 text-slate-600">
                     Last refresh {formatTimestamp(lastUpdatedAt)}
@@ -871,7 +864,7 @@ function App() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap">
               <button
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                 type="button"
@@ -947,7 +940,7 @@ function App() {
               />
             </section>
 
-            <div className="grid gap-6 xl:grid-cols-[1.28fr_0.92fr]">
+            <div className="grid gap-6 2xl:grid-cols-[1.2fr_0.8fr]">
               <div className="space-y-6">
                 <SessionSummaryCard
                   session={activeSession}
@@ -1119,7 +1112,7 @@ function App() {
               />
             </section>
 
-            <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+            <div className="grid gap-6 2xl:grid-cols-[0.92fr_1.08fr]">
               <aside className="space-y-6">
                 <DepartmentManagerCard
                   departments={departments}

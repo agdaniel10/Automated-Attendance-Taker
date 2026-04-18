@@ -54,13 +54,13 @@ export function SessionSummaryCard({
 
   return (
     <section className="overflow-hidden rounded-[1.85rem] border border-amber-100 bg-white shadow-[0_22px_60px_-40px_rgba(15,23,42,0.45)]">
-      <div className="border-b border-amber-100 bg-[linear-gradient(135deg,rgba(255,251,235,0.95),rgba(255,255,255,0.96))] px-6 py-5">
+      <div className="border-b border-amber-100 bg-[linear-gradient(135deg,rgba(255,251,235,0.95),rgba(255,255,255,0.96))] px-5 py-5 sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-700">
               Active Session
             </p>
-            <h3 className="mt-2 font-['Baskerville','Palatino_Linotype','Book_Antiqua',Georgia,serif] text-3xl tracking-tight text-slate-950">
+            <h3 className="mt-2 font-['Baskerville','Palatino_Linotype','Book_Antiqua',Georgia,serif] text-2xl tracking-tight text-slate-950 sm:text-3xl">
               {session.programName}
             </h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
@@ -68,9 +68,9 @@ export function SessionSummaryCard({
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 sm:grid-cols-3 lg:flex lg:flex-wrap">
             <button
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
               type="button"
               onClick={onRefresh}
               disabled={isRefreshing}
@@ -78,7 +78,7 @@ export function SessionSummaryCard({
               {isRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
             <button
-              className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100"
+              className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 transition hover:bg-amber-100"
               type="button"
               onClick={() => onExport(session.id)}
               disabled={exportingSessionId === session.id}
@@ -86,7 +86,7 @@ export function SessionSummaryCard({
               {exportingSessionId === session.id ? 'Preparing CSV...' : 'Export CSV'}
             </button>
             <button
-              className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
               type="button"
               onClick={() => onCloseSession(session.id)}
               disabled={isClosing}
@@ -97,7 +97,7 @@ export function SessionSummaryCard({
         </div>
       </div>
 
-      <div className="grid gap-4 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6 xl:grid-cols-5">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
             Started
@@ -132,7 +132,7 @@ export function SessionSummaryCard({
         </div>
       </div>
 
-      <div className="border-t border-slate-100 px-6 py-4">
+      <div className="border-t border-slate-100 px-5 py-4 sm:px-6">
         <p className="text-sm text-slate-500">
           Total recorded attendance so far:
           <span className="ml-2 font-semibold text-slate-950">{liveCount}</span>

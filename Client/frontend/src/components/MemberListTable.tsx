@@ -87,7 +87,68 @@ export function MemberListTable({
         </button>
       </form>
 
-      <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-slate-200">
+      <div className="mt-6 md:hidden">
+        {members.length === 0 ? (
+          <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-center text-slate-500">
+            No members match this filter yet.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {members.map((member) => {
+              const isSelected = member.id === selectedMemberId
+
+              return (
+                <article
+                  key={member.id}
+                  className={`rounded-[1.35rem] border p-4 ${
+                    isSelected
+                      ? 'border-amber-300 bg-amber-50/70'
+                      : 'border-slate-200 bg-slate-50/80'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <span className="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-700 ring-1 ring-sky-100">
+                        {member.aagcNumber}
+                      </span>
+                      <p className="mt-3 font-semibold text-slate-950">{member.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {member.email} | {member.phone}
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] ${biometricTone(member.biometricStatus)}`}
+                    >
+                      {member.biometricStatus}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                    <p>
+                      <span className="font-medium text-slate-900">Department:</span>{' '}
+                      {member.department?.name ?? 'No department'}
+                    </p>
+                    <p>
+                      <span className="font-medium text-slate-900">Fingers:</span>{' '}
+                      {member.enrolledFingerCount}
+                    </p>
+                  </div>
+
+                  <button
+                    className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold tracking-[0.16em] text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                    type="button"
+                    onClick={() => onSelectMember(member.id)}
+                  >
+                    {isSelected ? 'SELECTED MEMBER' : 'OPEN MEMBER'}
+                  </button>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 hidden overflow-hidden rounded-[1.5rem] border border-slate-200 md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
