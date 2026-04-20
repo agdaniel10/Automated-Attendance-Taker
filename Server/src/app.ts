@@ -10,13 +10,6 @@ import scannerAuthRoutes from "./routes/scannerAuthRoutes";
 
 const app = express();
 
-// app.use(
-//   cors({
-//     origin: true,
-//     credentials: true,
-//   }),
-// );
-
 const allowedOrigins = [
   "http://localhost:5173",
   "https://automated-attendance-taker.vercel.app",
