@@ -56,14 +56,14 @@ export function SessionSummaryCard({
     <section className="overflow-hidden rounded-[1.85rem] border border-amber-100 bg-white shadow-[0_22px_60px_-40px_rgba(15,23,42,0.45)]">
       <div className="border-b border-amber-100 bg-[linear-gradient(135deg,rgba(255,251,235,0.95),rgba(255,255,255,0.96))] px-5 py-5 sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-700">
               Active Session
             </p>
-            <h3 className="mt-2 font-['Baskerville','Palatino_Linotype','Book_Antiqua',Georgia,serif] text-2xl tracking-tight text-slate-950 sm:text-3xl">
+            <h3 className="mt-2 break-words font-['Baskerville','Palatino_Linotype','Book_Antiqua',Georgia,serif] text-2xl tracking-tight text-slate-950 sm:text-3xl">
               {session.programName}
             </h3>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-slate-600">
               {session.notes?.trim() || 'No notes were added for this session.'}
             </p>
           </div>

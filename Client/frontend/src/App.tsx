@@ -1,33 +1,26 @@
 import type { FormEvent } from 'react'
-import { useEffect, useEffectEvent, useState } from 'react'
+import {
+  startTransition,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from 'react'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 
 import {
   closeSession,
   exportSessionCsv,
-  listSessionEvents,
   listReviewQueue,
+  listSessionEvents,
   listSessions,
   manualApproveAttendance,
   markAttendanceByNumber,
   startSession,
 } from './api/attendanceApi'
-import { AagcNumberCheckInCard } from './components/AagcNumberCheckInCard'
 import { loginAdmin } from './api/authApi'
 import { ApiError } from './api/http'
-import { AttendanceEventsTable } from './components/AttendanceEventsTable'
-import { ChurchLogo } from './components/ChurchLogo'
-import { DashboardTabs } from './components/DashboardTabs'
-import { DepartmentManagerCard } from './components/DepartmentManagerCard'
-import { EnrollmentGuideCard } from './components/EnrollmentGuideCard'
-import { LoginScreen } from './components/LoginScreen'
-import { ManualApprovalCard } from './components/ManualApprovalCard'
-import { MemberCreateForm } from './components/MemberCreateForm'
-import { MemberListTable } from './components/MemberListTable'
-import { MetricCard } from './components/MetricCard'
-import { ReviewQueueCard } from './components/ReviewQueueCard'
-import { SessionHistoryTable } from './components/SessionHistoryTable'
-import { SessionStartForm } from './components/SessionStartForm'
-import { SessionSummaryCard } from './components/SessionSummaryCard'
 import {
   createDepartment,
   createMember,
@@ -35,54 +28,322 @@ import {
   listDepartments,
   listMembers,
 } from './api/memberApi'
+import { DashboardShell } from './components/DashboardShell'
+import type { SidebarNavigationItem } from './components/SidebarNavigation'
+import { LoginScreen } from './components/LoginScreen'
 import {
   clearStoredAdminSession,
   getDefaultBaseUrl,
   loadStoredAdminSession,
   saveStoredAdminSession,
 } from './lib/adminSession'
+import {
+  loadDashboardOnboardingState,
+  saveDashboardOnboardingState,
+} from './lib/dashboardOnboarding'
+import { AttendancePage } from './pages/AttendancePage'
+import { MembersPage } from './pages/MembersPage'
+import { OverviewPage } from './pages/OverviewPage'
+import { ReportsPage } from './pages/ReportsPage'
+import { ReviewQueuePage } from './pages/ReviewQueuePage'
 import type {
   AttendanceEvent,
-  DepartmentRecord,
   AttendanceSession,
-  DashboardNotice,
+  DepartmentRecord,
   MemberBiometrics,
   MemberSummary,
   ReviewQueueItem,
   StoredAdminSession,
 } from './types/dashboard'
 
-function formatTimestamp(value: string | null): string {
-  if (!value) {
-    return 'Not yet synced'
-  }
+type DashboardTone = 'success' | 'error' | 'info'
 
-  return new Date(value).toLocaleString()
+type TrendChartDatum = {
+  label: string
+  attendance: number
+  fullLabel: string
 }
 
-function getNoticeClasses(tone: DashboardNotice['tone']): string {
-  switch (tone) {
-    case 'success':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-    case 'warning':
-      return 'border-amber-200 bg-amber-50 text-amber-800'
-    case 'error':
-      return 'border-red-200 bg-red-50 text-red-800'
-    default:
-      return 'border-sky-200 bg-sky-50 text-sky-800'
+type MemberAttendanceDatum = {
+  label: string
+  attendanceCount: number
+  fullName: string
+  aagcNumber: string | null
+}
+
+type DepartmentAttendanceDatum = {
+  name: string
+  value: number
+  fill: string
+}
+
+type MemberFilters = {
+  search: string
+  departmentId: string
+}
+
+function pushToast(
+  tone: DashboardTone,
+  title: string,
+  description?: string,
+): void {
+  const options = {
+    description,
+    duration: 4200,
   }
+
+  if (tone === 'success') {
+    toast.success(title, options)
+    return
+  }
+
+  if (tone === 'error') {
+    toast.error(title, options)
+    return
+  }
+
+  toast(title, options)
+}
+
+function sourceLabel(source: string): string {
+  if (source === 'SCANNER') {
+    return 'Fingerprint scanner'
+  }
+
+  if (source === 'MEMBER_NUMBER') {
+    return 'AAGC number'
+  }
+
+  if (source === 'ADMIN_APPROVAL') {
+    return 'Manual approval'
+  }
+
+  return source
+}
+
+function trimProgramLabel(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 15)}...` : value
+}
+
+function buildTrendData(sessions: AttendanceSession[]): TrendChartDatum[] {
+  return sessions
+    .slice(0, 6)
+    .reverse()
+    .map((session) => ({
+      label: trimProgramLabel(session.programName),
+      attendance: session._count?.events ?? 0,
+      fullLabel: `${session.programName} - ${new Date(session.startedAt).toLocaleDateString()}`,
+    }))
+}
+
+function shortMemberLabel(name: string, aagcNumber: string | null): string {
+  if (aagcNumber) {
+    return aagcNumber
+  }
+
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) {
+    return 'Member'
+  }
+
+  return words.slice(0, 2).join(' ')
+}
+
+function buildMemberAttendanceData(
+  events: AttendanceEvent[],
+): MemberAttendanceDatum[] {
+  const counts = new Map<string, MemberAttendanceDatum>()
+
+  for (const event of events) {
+    if (!event.memberId && !event.aagcNumber) {
+      continue
+    }
+
+    const key = event.memberId ?? event.aagcNumber ?? event.name.toLowerCase()
+    const existing = counts.get(key)
+
+    if (existing) {
+      existing.attendanceCount += 1
+      continue
+    }
+
+    counts.set(key, {
+      label: shortMemberLabel(event.name, event.aagcNumber),
+      attendanceCount: 1,
+      fullName: event.name,
+      aagcNumber: event.aagcNumber,
+    })
+  }
+
+  return [...counts.values()]
+    .sort((left, right) => right.attendanceCount - left.attendanceCount)
+    .slice(0, 7)
+}
+
+const PIE_COLORS = ['#0f172a', '#f59e0b', '#38bdf8', '#10b981', '#f97316', '#7c3aed']
+
+function buildDepartmentAttendanceData(
+  events: AttendanceEvent[],
+): DepartmentAttendanceDatum[] {
+  const counts = new Map<string, number>()
+
+  for (const event of events) {
+    const key = event.department?.trim() || 'No department'
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+
+  const sorted = [...counts.entries()].sort((left, right) => right[1] - left[1])
+  const visibleEntries = sorted.slice(0, 5)
+
+  if (sorted.length > 5) {
+    const otherTotal = sorted.slice(5).reduce((sum, [, value]) => sum + value, 0)
+    visibleEntries.push(['Other departments', otherTotal])
+  }
+
+  return visibleEntries.map(([name, value], index) => ({
+    name,
+    value,
+    fill: PIE_COLORS[index % PIE_COLORS.length],
+  }))
+}
+
+function overviewIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 13.5L10.5 7L14.5 11L20 5.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 19H20"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function attendanceIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect
+        x="4"
+        y="5"
+        width="16"
+        height="15"
+        rx="3"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M8 3V7M16 3V7M8 11H16M8 15H12"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function membersIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M16.5 19C16.5 16.7909 14.4853 15 12 15C9.51472 15 7.5 16.7909 7.5 19"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="8.5" r="3.5" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M19.5 18.5C19.3616 17.2506 18.5681 16.1691 17.4 15.6M4.5 18.5C4.63842 17.2506 5.43188 16.1691 6.6 15.6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function reviewIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 8V12L14.5 14.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
+function reportsIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M7 17L10.5 13.5L13 16L17 11"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 20H18C19.1046 20 20 19.1046 20 18V6C20 4.89543 19.1046 4 18 4H6C4.89543 4 4 4.89543 4 6V18C4 19.1046 4.89543 20 6 20Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+    </svg>
+  )
+}
+
+const PAGE_META: Record<string, { title: string; description: string }> = {
+  '/overview': {
+    title: 'Overview',
+    description:
+      'See the health of church attendance at a glance with session trends, member attendance graphs, and live arrival summaries.',
+  },
+  '/attendance': {
+    title: 'Attendance Desk',
+    description:
+      'Control live service sessions, accept AAGC number check-ins, monitor the live feed, and keep service-day operations moving smoothly.',
+  },
+  '/members': {
+    title: 'Members',
+    description:
+      'Create new departments and members, review biometric readiness, and prepare each member for ScannerBridge fingerprint enrollment.',
+  },
+  '/review-queue': {
+    title: 'Review Queue',
+    description:
+      'Resolve failed fingerprint matches carefully so no-match cases are handled with confidence instead of guesswork.',
+  },
+  '/reports': {
+    title: 'Reports',
+    description:
+      'Browse recent sessions, inspect attendance event history, and export records for follow-up, reporting, or archiving.',
+  },
 }
 
 function App() {
-  const storedSession = loadStoredAdminSession()
-
-  const [activeView, setActiveView] = useState<'attendance' | 'members'>('attendance')
-  const [authSession, setAuthSession] = useState<StoredAdminSession | null>(storedSession)
-  const [loginForm, setLoginForm] = useState({
-    apiBaseUrl: storedSession?.baseUrl ?? getDefaultBaseUrl(),
-    operatorName: storedSession?.operatorName ?? 'Admin Operator',
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [authSession, setAuthSession] = useState<StoredAdminSession | null>(() =>
+    loadStoredAdminSession(),
+  )
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() =>
+    loadDashboardOnboardingState().dismissed,
+  )
+  const [loginForm, setLoginForm] = useState(() => ({
+    apiBaseUrl: loadStoredAdminSession()?.baseUrl ?? getDefaultBaseUrl(),
+    operatorName: loadStoredAdminSession()?.operatorName ?? 'Admin Operator',
     password: '',
-  })
+  }))
   const [loginError, setLoginError] = useState('')
   const [isLoggingIn, setIsLoggingIn] = useState(false)
 
@@ -90,6 +351,7 @@ function App() {
   const [selectedSessionId, setSelectedSessionId] = useState('')
   const [activeEvents, setActiveEvents] = useState<AttendanceEvent[]>([])
   const [selectedSessionEvents, setSelectedSessionEvents] = useState<AttendanceEvent[]>([])
+  const [overviewEvents, setOverviewEvents] = useState<AttendanceEvent[]>([])
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
   const [selectedReviewAttemptId, setSelectedReviewAttemptId] = useState('')
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
@@ -97,7 +359,6 @@ function App() {
   const [selectedMemberId, setSelectedMemberId] = useState('')
   const [selectedMemberBiometrics, setSelectedMemberBiometrics] =
     useState<MemberBiometrics | null>(null)
-  const [notice, setNotice] = useState<DashboardNotice | null>(null)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
 
   const [startForm, setStartForm] = useState({
@@ -120,7 +381,7 @@ function App() {
     email: '',
     departmentId: '',
   })
-  const [memberFilters, setMemberFilters] = useState({
+  const [memberFilters, setMemberFilters] = useState<MemberFilters>({
     search: '',
     departmentId: '',
   })
@@ -137,12 +398,19 @@ function App() {
   const [isCreatingMember, setIsCreatingMember] = useState(false)
   const [exportingSessionId, setExportingSessionId] = useState<string | null>(null)
 
+  const liveSessionIdRef = useRef('')
+  const seenActiveEventIdsRef = useRef(new Set<string>())
+  const hasPrimedLiveFeedRef = useRef(false)
+  const hasCelebratedOnboardingRef = useRef(false)
+
   const activeSession = sessions.find((session) => session.status === 'ACTIVE') ?? null
   const selectedSession =
     sessions.find((session) => session.id === selectedSessionId) ??
     activeSession ??
     sessions[0] ??
     null
+  const selectedReviewAttempt =
+    reviewQueue.find((attempt) => attempt.id === selectedReviewAttemptId) ?? null
 
   const totalEvents = sessions.reduce(
     (sum, session) => sum + (session._count?.events ?? 0),
@@ -162,6 +430,159 @@ function App() {
   const pendingMembersCount = members.filter(
     (member) => member.biometricStatus !== 'ENROLLED',
   ).length
+
+  const onboardingSteps = [
+    {
+      id: 'department',
+      title: 'Create at least one department',
+      description:
+        'Departments must exist before members can be registered properly in the church system.',
+      completed: departments.length > 0,
+      actionLabel: 'Go to Members',
+      onAction: () => startTransition(() => navigate('/members')),
+      helperText: 'Example departments: Choir, Ushering, Children, Media.',
+    },
+    {
+      id: 'member',
+      title: 'Register your first member',
+      description:
+        'Create the first member record so the dashboard can begin managing real people instead of an empty list.',
+      completed: members.length > 0,
+      actionLabel: 'Register Member',
+      onAction: () => startTransition(() => navigate('/members')),
+      helperText: 'Each new member receives a simple AAGC number like AAGC1.',
+    },
+    {
+      id: 'biometric',
+      title: 'Enroll fingerprints in ScannerBridge',
+      description:
+        'Complete fingerprint enrollment for at least one member so scanner attendance is ready to work end to end.',
+      completed: enrolledMembersCount > 0,
+      actionLabel: 'Open Enrollment Page',
+      onAction: () => startTransition(() => navigate('/members')),
+      helperText:
+        'Select the member in the Members page, then continue the enrollment step in ScannerBridge.',
+    },
+    {
+      id: 'session',
+      title: 'Start your first attendance session',
+      description:
+        'An active service session is what allows attendance to start flowing in from the scanner or AAGC number entry.',
+      completed: sessions.length > 0,
+      actionLabel: 'Open Attendance Desk',
+      onAction: () => startTransition(() => navigate('/attendance')),
+      helperText:
+        'Use program names like Sunday Service, Midweek Service, or Youth Meeting.',
+    },
+    {
+      id: 'attendance',
+      title: 'Record the first attendance event',
+      description:
+        'Finish the setup by marking at least one person present using the scanner, AAGC number, or manual approval.',
+      completed: totalEvents > 0,
+      actionLabel: 'Record Attendance',
+      onAction: () => startTransition(() => navigate('/attendance')),
+      helperText:
+        'Once this step completes, your reports and graphs become much more useful.',
+    },
+  ]
+  const onboardingComplete = onboardingSteps.every((step) => step.completed)
+  const onboardingVisible = location.pathname === '/overview' && !onboardingDismissed
+
+  const trendData = buildTrendData(sessions)
+  const memberAttendanceData = buildMemberAttendanceData(overviewEvents)
+  const departmentAttendanceData = buildDepartmentAttendanceData(overviewEvents)
+
+  const pageMeta = PAGE_META[location.pathname] ?? PAGE_META['/overview']
+  const onboardingActionLabel =
+    onboardingVisible || (!onboardingDismissed && location.pathname === '/overview')
+      ? 'Hide Quick Start'
+      : 'Open Quick Start'
+
+  const navigationItems: SidebarNavigationItem[] = [
+    {
+      to: '/overview',
+      label: 'Overview',
+      description: 'Graphs, pie chart, and service highlights',
+      icon: overviewIcon(),
+    },
+    {
+      to: '/attendance',
+      label: 'Attendance',
+      description: 'Run live service operations',
+      icon: attendanceIcon(),
+    },
+    {
+      to: '/members',
+      label: 'Members',
+      description: 'Registration and biometric readiness',
+      icon: membersIcon(),
+    },
+    {
+      to: '/review-queue',
+      label: 'Review Queue',
+      description: 'Approve no-match fingerprint cases',
+      icon: reviewIcon(),
+      badge: pendingReviewCount > 0 ? pendingReviewCount : null,
+    },
+    {
+      to: '/reports',
+      label: 'Reports',
+      description: 'Session archive and exports',
+      icon: reportsIcon(),
+    },
+  ]
+
+  function announceActiveEvents(sessionId: string | null, events: AttendanceEvent[]): void {
+    if (!sessionId) {
+      liveSessionIdRef.current = ''
+      seenActiveEventIdsRef.current = new Set()
+      hasPrimedLiveFeedRef.current = false
+      return
+    }
+
+    if (liveSessionIdRef.current !== sessionId) {
+      liveSessionIdRef.current = sessionId
+      seenActiveEventIdsRef.current = new Set()
+      hasPrimedLiveFeedRef.current = false
+    }
+
+    const currentIds = new Set(events.map((event) => event.id))
+
+    if (!hasPrimedLiveFeedRef.current) {
+      seenActiveEventIdsRef.current = currentIds
+      hasPrimedLiveFeedRef.current = true
+      return
+    }
+
+    const freshEvents = events.filter(
+      (event) => !seenActiveEventIdsRef.current.has(event.id),
+    )
+
+    seenActiveEventIdsRef.current = currentIds
+
+    if (freshEvents.length === 0) {
+      return
+    }
+
+    if (freshEvents.length === 1) {
+      const event = freshEvents[0]
+      pushToast(
+        'success',
+        `${event.name} marked present`,
+        event.aagcNumber
+          ? `${event.aagcNumber} checked in by ${sourceLabel(event.source).toLowerCase()}.`
+          : `${sourceLabel(event.source)} check-in recorded successfully.`,
+      )
+      return
+    }
+
+    pushToast(
+      'success',
+      `${freshEvents.length} new members marked present`,
+      `${freshEvents[0].name} and others have just been added to the active attendance session.`,
+    )
+  }
 
   async function refreshDashboard(preferredSessionId?: string): Promise<void> {
     if (!authSession) {
@@ -184,9 +605,10 @@ function App() {
         nextSelectedSessionId = nextActiveSession?.id ?? nextSessions[0]?.id ?? ''
       }
 
+      const overviewSessionIds = nextSessions.slice(0, 6).map((session) => session.id)
       const sessionIdsToLoad = Array.from(
         new Set(
-          [nextActiveSession?.id, nextSelectedSessionId].filter(
+          [nextActiveSession?.id, nextSelectedSessionId, ...overviewSessionIds].filter(
             (value): value is string => Boolean(value),
           ),
         ),
@@ -220,6 +642,16 @@ function App() {
         ],
       )
 
+      const nextActiveEvents = nextActiveSession
+        ? eventsBySession.get(nextActiveSession.id) ?? []
+        : []
+      const nextSelectedSessionEvents = nextSelectedSessionId
+        ? eventsBySession.get(nextSelectedSessionId) ?? []
+        : []
+      const nextOverviewEvents = overviewSessionIds.flatMap(
+        (sessionId) => eventsBySession.get(sessionId) ?? [],
+      )
+
       setSessions(nextSessions)
       setSelectedSessionId(nextSelectedSessionId)
       setReviewQueue(nextReviewQueue)
@@ -228,31 +660,29 @@ function App() {
           ? currentSelectedId
           : '',
       )
-      setActiveEvents(
-        nextActiveSession ? eventsBySession.get(nextActiveSession.id) ?? [] : [],
-      )
-      setSelectedSessionEvents(
-        nextSelectedSessionId ? eventsBySession.get(nextSelectedSessionId) ?? [] : [],
-      )
+      setActiveEvents(nextActiveEvents)
+      setSelectedSessionEvents(nextSelectedSessionEvents)
+      setOverviewEvents(nextOverviewEvents)
       setLastUpdatedAt(new Date().toISOString())
+
+      announceActiveEvents(nextActiveSession?.id ?? null, nextActiveEvents)
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearStoredAdminSession()
         setAuthSession(null)
-        setNotice({
-          tone: 'warning',
-          title: 'Session expired',
-          description: 'Please sign in again to continue managing attendance.',
-        })
+        pushToast(
+          'info',
+          'Session expired',
+          'Please sign in again to continue managing attendance.',
+        )
         return
       }
 
-      setNotice({
-        tone: 'error',
-        title: 'Dashboard refresh failed',
-        description:
-          error instanceof Error ? error.message : 'Unable to load attendance data.',
-      })
+      pushToast(
+        'error',
+        'Dashboard refresh failed',
+        error instanceof Error ? error.message : 'Unable to load attendance data.',
+      )
     } finally {
       setIsRefreshing(false)
       setIsRefreshingReviewQueue(false)
@@ -312,20 +742,22 @@ function App() {
           : '',
       )
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Review queue refresh failed',
-        description:
-          error instanceof Error
-            ? error.message
-            : 'Unable to load no-match review cases right now.',
-      })
+      pushToast(
+        'error',
+        'Review queue refresh failed',
+        error instanceof Error
+          ? error.message
+          : 'Unable to load no-match review cases right now.',
+      )
     } finally {
       setIsRefreshingReviewQueue(false)
     }
   }
 
-  async function refreshMembers(preferredMemberId?: string): Promise<void> {
+  async function refreshMembers(
+    preferredMemberId?: string,
+    filtersOverride?: MemberFilters,
+  ): Promise<void> {
     if (!authSession) {
       return
     }
@@ -333,9 +765,10 @@ function App() {
     setIsRefreshingMembers(true)
 
     try {
+      const filters = filtersOverride ?? memberFilters
       const nextMembers = await listMembers(authSession.baseUrl, authSession.token, {
-        search: memberFilters.search,
-        departmentId: memberFilters.departmentId,
+        search: filters.search,
+        departmentId: filters.departmentId,
       })
 
       setMembers(nextMembers)
@@ -362,12 +795,11 @@ function App() {
         setSelectedMemberBiometrics(null)
       }
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Member refresh failed',
-        description:
-          error instanceof Error ? error.message : 'Unable to load members right now.',
-      })
+      pushToast(
+        'error',
+        'Member refresh failed',
+        error instanceof Error ? error.message : 'Unable to load members right now.',
+      )
     } finally {
       setIsRefreshingMembers(false)
     }
@@ -394,17 +826,28 @@ function App() {
       )
       setSelectedMemberBiometrics(biometrics)
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Biometric status refresh failed',
-        description:
-          error instanceof Error
-            ? error.message
-            : 'Unable to load biometric status right now.',
-      })
+      pushToast(
+        'error',
+        'Biometric status refresh failed',
+        error instanceof Error
+          ? error.message
+          : 'Unable to load biometric status right now.',
+      )
     } finally {
       setIsRefreshingBiometrics(false)
     }
+  }
+
+  async function handleGlobalRefresh(): Promise<void> {
+    if (!authSession) {
+      return
+    }
+
+    await Promise.all([
+      refreshDashboard(selectedSessionId || undefined),
+      refreshDepartments(),
+      refreshMembers(selectedMemberId || undefined),
+    ])
   }
 
   const runRefresh = useEffectEvent((preferredSessionId?: string) => {
@@ -415,9 +858,11 @@ function App() {
     void refreshDepartments()
   })
 
-  const runMemberRefresh = useEffectEvent((preferredMemberId?: string) => {
-    void refreshMembers(preferredMemberId)
-  })
+  const runMemberRefresh = useEffectEvent(
+    (preferredMemberId?: string, filtersOverride?: MemberFilters) => {
+      void refreshMembers(preferredMemberId, filtersOverride)
+    },
+  )
 
   useEffect(() => {
     if (!authSession) {
@@ -436,10 +881,47 @@ function App() {
 
     const intervalId = window.setInterval(() => {
       runRefresh()
-    }, 15000)
+    }, 8000)
 
     return () => window.clearInterval(intervalId)
   }, [authSession])
+
+  useEffect(() => {
+    if (!authSession) {
+      hasCelebratedOnboardingRef.current = false
+      return
+    }
+
+    if (onboardingComplete && !hasCelebratedOnboardingRef.current) {
+      hasCelebratedOnboardingRef.current = true
+      pushToast(
+        'success',
+        'Dashboard onboarding completed',
+        'Your departments, members, attendance flow, and first records are now in place.',
+      )
+      return
+    }
+
+    if (!onboardingComplete) {
+      hasCelebratedOnboardingRef.current = false
+    }
+  }, [authSession, onboardingComplete])
+
+  function handleDismissOnboarding(): void {
+    setOnboardingDismissed(true)
+    saveDashboardOnboardingState({ dismissed: true })
+  }
+
+  function handleToggleOnboarding(): void {
+    if (location.pathname !== '/overview' || onboardingDismissed) {
+      setOnboardingDismissed(false)
+      saveDashboardOnboardingState({ dismissed: false })
+      startTransition(() => navigate('/overview'))
+      return
+    }
+
+    handleDismissOnboarding()
+  }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -460,11 +942,15 @@ function App() {
         operatorName: session.operatorName,
         password: '',
       }))
-      setNotice({
-        tone: 'success',
-        title: 'Welcome back',
-        description: `${session.operatorName} is now signed in and ready to manage attendance.`,
-      })
+      liveSessionIdRef.current = ''
+      seenActiveEventIdsRef.current = new Set()
+      hasPrimedLiveFeedRef.current = false
+      pushToast(
+        'success',
+        'Welcome back',
+        `${session.operatorName} is ready to manage attendance.`,
+      )
+      startTransition(() => navigate('/overview'))
     } catch (error) {
       setLoginError(
         error instanceof Error ? error.message : 'Unable to sign in right now.',
@@ -481,17 +967,21 @@ function App() {
     setSelectedSessionId('')
     setActiveEvents([])
     setSelectedSessionEvents([])
+    setOverviewEvents([])
     setReviewQueue([])
     setSelectedReviewAttemptId('')
     setDepartments([])
     setMembers([])
     setSelectedMemberId('')
     setSelectedMemberBiometrics(null)
-    setNotice({
-      tone: 'info',
-      title: 'Signed out',
-      description: 'The admin session has been cleared from this browser.',
-    })
+    setLastUpdatedAt(null)
+    setOnboardingDismissed(loadDashboardOnboardingState().dismissed)
+    liveSessionIdRef.current = ''
+    seenActiveEventIdsRef.current = new Set()
+    hasPrimedLiveFeedRef.current = false
+    hasCelebratedOnboardingRef.current = false
+    pushToast('info', 'Signed out', 'The admin session has been cleared from this browser.')
+    startTransition(() => navigate('/overview'))
   }
 
   async function handleStartSession(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -504,19 +994,19 @@ function App() {
 
     try {
       const session = await startSession(authSession.baseUrl, authSession.token, startForm)
-      setNotice({
-        tone: 'success',
-        title: 'Session started',
-        description: `${session.programName} is now live and ready for scanner check-ins.`,
-      })
+      pushToast(
+        'success',
+        'Session started',
+        `${session.programName} is now live and ready for scanner check-ins.`,
+      )
       await refreshDashboard(session.id)
+      startTransition(() => navigate('/attendance'))
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Unable to start session',
-        description:
-          error instanceof Error ? error.message : 'Please try again in a moment.',
-      })
+      pushToast(
+        'error',
+        'Unable to start session',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      )
     } finally {
       setIsStartingSession(false)
     }
@@ -539,19 +1029,18 @@ function App() {
 
     try {
       const session = await closeSession(authSession.baseUrl, authSession.token, sessionId)
-      setNotice({
-        tone: 'warning',
-        title: 'Session closed',
-        description: `${session.programName} has been closed successfully.`,
-      })
+      pushToast(
+        'info',
+        'Session closed',
+        `${session.programName} has been closed successfully.`,
+      )
       await refreshDashboard()
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Unable to close session',
-        description:
-          error instanceof Error ? error.message : 'Please try again in a moment.',
-      })
+      pushToast(
+        'error',
+        'Unable to close session',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      )
     } finally {
       setIsClosingSession(false)
     }
@@ -581,25 +1070,27 @@ function App() {
         notes: '',
       })
       setSelectedReviewAttemptId('')
-      setNotice({
-        tone: result.status === 'already_marked' ? 'warning' : 'success',
-        title:
-          result.status === 'already_marked'
-            ? 'Attendance already recorded'
-            : 'Attendance approved',
-        description:
-          result.member?.aagcNumber && result.member?.name
-            ? `${result.member.name} (${result.member.aagcNumber})`
-            : result.message,
-      })
+
+      if (result.attendanceEventId) {
+        seenActiveEventIdsRef.current.add(result.attendanceEventId)
+      }
+
+      pushToast(
+        result.status === 'already_marked' ? 'info' : 'success',
+        result.status === 'already_marked'
+          ? 'Attendance already recorded'
+          : 'Attendance approved',
+        result.member?.aagcNumber && result.member?.name
+          ? `${result.member.name} (${result.member.aagcNumber})`
+          : result.message,
+      )
       await refreshDashboard(activeSession.id)
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Approval failed',
-        description:
-          error instanceof Error ? error.message : 'Please try again in a moment.',
-      })
+      pushToast(
+        'error',
+        'Approval failed',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      )
     } finally {
       setIsApproving(false)
     }
@@ -645,25 +1136,27 @@ function App() {
       )
 
       setAagcForm({ aagcNumber: '' })
-      setNotice({
-        tone: result.status === 'already_marked' ? 'warning' : 'success',
-        title:
-          result.status === 'already_marked'
-            ? 'Already marked'
-            : 'Attendance recorded by AAGC number',
-        description:
-          result.member?.aagcNumber && result.member?.name
-            ? `${result.member.name} (${result.member.aagcNumber})`
-            : result.message,
-      })
+
+      if (result.attendanceEventId) {
+        seenActiveEventIdsRef.current.add(result.attendanceEventId)
+      }
+
+      pushToast(
+        result.status === 'already_marked' ? 'info' : 'success',
+        result.status === 'already_marked'
+          ? 'Already marked'
+          : 'Attendance recorded by AAGC number',
+        result.member?.aagcNumber && result.member?.name
+          ? `${result.member.name} (${result.member.aagcNumber})`
+          : result.message,
+      )
       await refreshDashboard(activeSession.id)
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'AAGC number check-in failed',
-        description:
-          error instanceof Error ? error.message : 'Please try again in a moment.',
-      })
+      pushToast(
+        'error',
+        'AAGC number check-in failed',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      )
     } finally {
       setIsMarkingByNumber(false)
     }
@@ -692,18 +1185,13 @@ function App() {
       anchor.remove()
       window.URL.revokeObjectURL(url)
 
-      setNotice({
-        tone: 'success',
-        title: 'CSV export ready',
-        description: `${fileName} has been downloaded to this device.`,
-      })
+      pushToast('success', 'CSV export ready', `${fileName} has been downloaded.`)
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Export failed',
-        description:
-          error instanceof Error ? error.message : 'Please try again in a moment.',
-      })
+      pushToast(
+        'error',
+        'Export failed',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      )
     } finally {
       setExportingSessionId(null)
     }
@@ -728,18 +1216,17 @@ function App() {
         ...currentForm,
         departmentId: department.id || nextDepartments[0]?.id || '',
       }))
-      setNotice({
-        tone: 'success',
-        title: 'Department added',
-        description: `${department.name} is now available for member registration.`,
-      })
+      pushToast(
+        'success',
+        'Department added',
+        `${department.name} is now available for member registration.`,
+      )
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Unable to add department',
-        description:
-          error instanceof Error ? error.message : 'Please try again in a moment.',
-      })
+      pushToast(
+        'error',
+        'Unable to add department',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      )
     } finally {
       setIsCreatingDepartment(false)
     }
@@ -755,31 +1242,36 @@ function App() {
 
     try {
       const member = await createMember(authSession.baseUrl, authSession.token, memberForm)
+      const resetFilters = {
+        search: '',
+        departmentId: '',
+      }
+
       setMemberForm((currentForm) => ({
         ...currentForm,
         name: '',
         phone: '',
         email: '',
       }))
-      setMemberFilters({
-        search: '',
-        departmentId: '',
-      })
-      setActiveView('members')
-      setNotice({
-        tone: 'success',
-        title: 'Member created',
-        description: `${member.name} now appears in the registry as ${member.aagcNumber} and is ready for fingerprint enrollment.`,
-      })
-      await refreshMembers(member.id)
-      await refreshDepartments()
+      setMemberFilters(resetFilters)
+
+      pushToast(
+        'success',
+        'Member created',
+        `${member.name} now appears in the registry as ${member.aagcNumber}.`,
+      )
+
+      await Promise.all([
+        refreshMembers(member.id, resetFilters),
+        refreshDepartments(),
+      ])
+      startTransition(() => navigate('/members'))
     } catch (error) {
-      setNotice({
-        tone: 'error',
-        title: 'Unable to create member',
-        description:
-          error instanceof Error ? error.message : 'Please try again in a moment.',
-      })
+      pushToast(
+        'error',
+        'Unable to create member',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      )
     } finally {
       setIsCreatingMember(false)
     }
@@ -787,7 +1279,7 @@ function App() {
 
   function handleMemberSearch(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    void refreshMembers()
+    void refreshMembers(undefined, memberFilters)
   }
 
   async function handleSelectMember(memberId: string): Promise<void> {
@@ -803,24 +1295,24 @@ function App() {
 
     try {
       await navigator.clipboard.writeText(memberId)
-      setNotice({
-        tone: 'success',
-        title: 'Member ID copied',
-        description: 'You can now paste it into ScannerBridge if needed.',
-      })
+      pushToast(
+        'success',
+        'Member ID copied',
+        'You can now paste it into ScannerBridge if needed.',
+      )
     } catch {
-      setNotice({
-        tone: 'warning',
-        title: 'Copy not supported',
-        description: 'Please copy the member ID manually from the enrollment panel.',
-      })
+      pushToast(
+        'info',
+        'Copy not supported',
+        'Please copy the member ID manually from the enrollment panel.',
+      )
     }
   }
 
-  const selectedMember =
-    members.find((member) => member.id === selectedMemberId) ?? null
-  const selectedReviewAttempt =
-    reviewQueue.find((attempt) => attempt.id === selectedReviewAttemptId) ?? null
+  function handleSelectSession(sessionId: string): void {
+    setSelectedSessionId(sessionId)
+    void refreshDashboard(sessionId)
+  }
 
   if (!authSession) {
     return (
@@ -841,338 +1333,151 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,248,232,0.85),_rgba(255,255,255,0.96)_42%),linear-gradient(180deg,_#fffdf8_0%,_#ffffff_100%)] px-3 py-4 text-slate-900 sm:px-6 sm:py-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-5 sm:space-y-6">
-        <header className="relative overflow-hidden rounded-[1.75rem] border border-white/80 bg-white px-4 py-5 shadow-[0_32px_80px_-46px_rgba(15,23,42,0.48)] sm:rounded-[2.2rem] sm:px-6 sm:py-6 lg:px-8">
-          <div className="absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.16),_transparent_70%)]" />
-          <div className="relative flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-            <div className="space-y-5">
-              <ChurchLogo />
-              <div className="space-y-3">
-                <p className="max-w-3xl text-sm leading-7 text-slate-600">
-                  A beautiful white operations dashboard for service attendance,
-                  built around your current backend, scanner terminal, and export flow.
-                </p>
-                <div className="flex flex-wrap gap-2 text-[11px] font-medium uppercase tracking-[0.22em] text-slate-400 sm:gap-3 sm:text-xs sm:tracking-[0.25em]">
-                  <span className="rounded-full bg-slate-100 px-3 py-2 text-slate-600">
-                    Operator {authSession.operatorName}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-2 text-slate-600">
-                    Last refresh {formatTimestamp(lastUpdatedAt)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap">
-              <button
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-                type="button"
-                onClick={() => void refreshDashboard()}
-                disabled={isRefreshing}
-              >
-                {isRefreshing ? 'Refreshing...' : 'Refresh Dashboard'}
-              </button>
-              <button
-                className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold tracking-[0.18em] text-white transition hover:bg-slate-800"
-                type="button"
-                onClick={handleLogout}
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-
-          {notice ? (
-            <div
-              className={`relative mt-6 rounded-[1.4rem] border px-5 py-4 ${getNoticeClasses(
-                notice.tone,
-              )}`}
-            >
-              <p className="text-sm font-semibold uppercase tracking-[0.24em]">
-                {notice.title}
-              </p>
-              <p className="mt-1 text-sm leading-6">{notice.description}</p>
-            </div>
-          ) : null}
-        </header>
-
-        <div className="flex justify-start">
-          <DashboardTabs activeView={activeView} onChange={setActiveView} />
-        </div>
-
-        {activeView === 'attendance' ? (
-          <>
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-              <MetricCard
-                label="Active Service"
-                value={activeSession ? activeSession.programName : 'None'}
-                hint={
-                  activeSession
-                    ? `Started by ${activeSession.startedBy}`
-                    : 'Open a service window to begin scanner attendance.'
-                }
-              />
-              <MetricCard
-                label="Live Attendance"
-                value={String(activeEvents.length)}
-                hint="Real-time count in the active session"
-              />
-              <MetricCard
-                label="AAGC Number"
-                value={String(liveNumberCount)}
-                hint="Check-ins recorded by typed member number"
-              />
-              <MetricCard
-                label="Manual Approvals"
-                value={String(liveManualCount)}
-                hint="Approvals handled from the admin dashboard"
-              />
-              <MetricCard
-                label="Review Queue"
-                value={String(pendingReviewCount)}
-                hint="Pending failed fingerprint scans awaiting review"
-              />
-              <MetricCard
-                label="All Records"
-                value={String(totalEvents)}
-                hint="Events across recent attendance sessions"
-              />
-            </section>
-
-            <div className="grid gap-6 2xl:grid-cols-[1.2fr_0.8fr]">
-              <div className="space-y-6">
-                <SessionSummaryCard
-                  session={activeSession}
-                  liveCount={activeEvents.length}
-                  scannerCount={liveScannerCount}
-                  numberCount={liveNumberCount}
-                  adminCount={liveManualCount}
-                  onRefresh={() => void refreshDashboard()}
-                  onCloseSession={(sessionId) => void handleCloseSession(sessionId)}
-                  onExport={(sessionId) => void handleExport(sessionId)}
-                  isRefreshing={isRefreshing}
-                  isClosing={isClosingSession}
-                  exportingSessionId={exportingSessionId}
-                />
-
-                <AttendanceEventsTable
-                  title={
-                    activeSession
-                      ? `${activeSession.programName} live check-ins`
-                      : 'Live attendance feed'
-                  }
-                  subtitle={
-                    activeSession
-                      ? 'This panel updates automatically while the session is active.'
-                      : 'Start a session to see incoming scanner and manual attendance entries.'
-                  }
-                  events={activeEvents}
-                  emptyTitle="No attendance has been recorded yet"
-                  emptyDescription="Once the scanner terminal starts marking attendance, the live feed will appear here."
-                />
-
-                <SessionHistoryTable
-                  sessions={sessions}
-                  selectedSessionId={selectedSession?.id ?? ''}
-                  onSelectSession={(sessionId) => {
-                    setSelectedSessionId(sessionId)
-                    void refreshDashboard(sessionId)
-                  }}
-                  onExport={(sessionId) => void handleExport(sessionId)}
-                  exportingSessionId={exportingSessionId}
-                />
-
-                <AttendanceEventsTable
-                  title={
-                    selectedSession
-                      ? `${selectedSession.programName} session details`
-                      : 'Session details'
-                  }
-                  subtitle={
-                    selectedSession
-                      ? 'Use the archive above to inspect another attendance session.'
-                      : 'Select a session from the archive to inspect its full event list.'
-                  }
-                  events={selectedSessionEvents}
-                  emptyTitle="No attendance records for this session"
-                  emptyDescription="When this session receives scanner or manual attendance, the detailed records will appear here."
-                />
-              </div>
-
-              <aside className="space-y-6">
-                <SessionStartForm
-                  programName={startForm.programName}
-                  notes={startForm.notes}
-                  isSubmitting={isStartingSession}
-                  hasActiveSession={Boolean(activeSession)}
-                  onProgramNameChange={(value) =>
-                    setStartForm((currentForm) => ({ ...currentForm, programName: value }))
-                  }
-                  onNotesChange={(value) =>
-                    setStartForm((currentForm) => ({ ...currentForm, notes: value }))
-                  }
-                  onSubmit={handleStartSession}
-                />
-
-                <AagcNumberCheckInCard
-                  hasActiveSession={Boolean(activeSession)}
-                  aagcNumber={aagcForm.aagcNumber}
-                  isSubmitting={isMarkingByNumber}
-                  onAagcNumberChange={(value) => setAagcForm({ aagcNumber: value })}
-                  onSubmit={handleMarkAttendanceByNumber}
-                />
-
-                <ReviewQueueCard
-                  attempts={reviewQueue}
-                  selectedAttemptId={selectedReviewAttemptId}
-                  isRefreshing={isRefreshingReviewQueue}
-                  onRefresh={() => void refreshReviewQueue()}
-                  onSelectAttempt={handleSelectReviewAttempt}
-                />
-
-                <ManualApprovalCard
-                  hasActiveSession={Boolean(activeSession)}
-                  displayName={manualForm.displayName}
-                  notes={manualForm.notes}
-                  isSubmitting={isApproving}
-                  selectedAttempt={selectedReviewAttempt}
-                  onDisplayNameChange={(value) =>
-                    setManualForm((currentForm) => ({ ...currentForm, displayName: value }))
-                  }
-                  onNotesChange={(value) =>
-                    setManualForm((currentForm) => ({ ...currentForm, notes: value }))
-                  }
-                  onClearSelectedAttempt={handleClearSelectedReviewAttempt}
-                  onSubmit={handleManualApproval}
-                />
-
-                <section className="rounded-[1.75rem] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.45)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Scanner Coordination
-                  </p>
-                  <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                    Operational guidance
-                  </h3>
-                  <div className="mt-5 space-y-4 text-sm leading-6 text-slate-600">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="font-semibold text-slate-900">1. Open the session here</p>
-                      <p className="mt-1">
-                        The scanner terminal only loads candidates when an active session exists.
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="font-semibold text-slate-900">2. Keep ScannerBridge separate</p>
-                      <p className="mt-1">
-                        Let the Windows terminal handle fingerprint capture while this web app
-                        stays focused on operations and reporting.
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="font-semibold text-slate-900">3. Use manual approval sparingly</p>
-                      <p className="mt-1">
-                        Reserve manual approval for guests or true exceptions. Use the
-                        AAGC number card when a member knows their church number.
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="font-semibold text-slate-900">4. Clear the review queue</p>
-                      <p className="mt-1">
-                        When a fingerprint scan fails, select it from the no-match queue
-                        and approve it intentionally so unresolved cases do not pile up.
-                      </p>
-                    </div>
-                  </div>
-                </section>
-              </aside>
-            </div>
-          </>
-        ) : (
-          <>
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <MetricCard
-                label="Departments"
-                value={String(departments.length)}
-                hint="Available groups for member registration"
-              />
-              <MetricCard
-                label="Visible Members"
-                value={String(members.length)}
-                hint="Current list after applying search and filters"
-              />
-              <MetricCard
-                label="Fully Enrolled"
-                value={String(enrolledMembersCount)}
-                hint="Members with two enrolled fingerprint templates"
-              />
-              <MetricCard
-                label="Pending Enrollment"
-                value={String(pendingMembersCount)}
-                hint="Members who still need one or more fingerprints"
-              />
-            </section>
-
-            <div className="grid gap-6 2xl:grid-cols-[0.92fr_1.08fr]">
-              <aside className="space-y-6">
-                <DepartmentManagerCard
-                  departments={departments}
-                  departmentName={departmentForm.name}
-                  isSubmitting={isCreatingDepartment}
-                  onDepartmentNameChange={(value) =>
-                    setDepartmentForm({ name: value })
-                  }
-                  onSubmit={handleCreateDepartment}
-                />
-
-                <MemberCreateForm
-                  departments={departments}
-                  form={memberForm}
-                  isSubmitting={isCreatingMember}
-                  onChange={(field, value) =>
-                    setMemberForm((currentForm) => ({ ...currentForm, [field]: value }))
-                  }
-                  onSubmit={handleCreateMember}
-                />
-              </aside>
-
-              <div className="space-y-6">
-                <MemberListTable
-                  members={members}
-                  departments={departments}
-                  selectedMemberId={selectedMemberId}
-                  search={memberFilters.search}
-                  departmentFilter={memberFilters.departmentId}
-                  isRefreshing={isRefreshingMembers}
-                  onSearchChange={(value) =>
-                    setMemberFilters((currentFilters) => ({
-                      ...currentFilters,
-                      search: value,
-                    }))
-                  }
-                  onDepartmentFilterChange={(value) =>
-                    setMemberFilters((currentFilters) => ({
-                      ...currentFilters,
-                      departmentId: value,
-                    }))
-                  }
-                  onSubmitSearch={handleMemberSearch}
-                  onRefresh={() => void refreshMembers()}
-                  onSelectMember={(memberId) => void handleSelectMember(memberId)}
-                />
-
-                <EnrollmentGuideCard
-                  member={selectedMember}
-                  biometrics={selectedMemberBiometrics}
-                  isRefreshing={isRefreshingBiometrics}
-                  onRefresh={() => void refreshSelectedMemberBiometrics()}
-                  onCopyMemberId={() => void handleCopyMemberId()}
-                />
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    </main>
+    <DashboardShell
+      navigationItems={navigationItems}
+      operatorName={authSession.operatorName}
+      activeSessionLabel={activeSession?.programName ?? 'No active service'}
+      pendingReviewCount={pendingReviewCount}
+      pageTitle={pageMeta.title}
+      pageDescription={pageMeta.description}
+      lastUpdatedAt={lastUpdatedAt}
+      isRefreshing={isRefreshing}
+      onRefresh={() => void handleGlobalRefresh()}
+      onboardingActionLabel={onboardingActionLabel}
+      onOnboardingAction={handleToggleOnboarding}
+      onLogout={handleLogout}
+    >
+      <Routes>
+        <Route path="/" element={<Navigate to="/overview" replace />} />
+        <Route
+          path="/overview"
+          element={
+            <OverviewPage
+              activeSession={activeSession}
+              activeEvents={activeEvents}
+              totalEvents={totalEvents}
+              enrolledMembersCount={enrolledMembersCount}
+              pendingMembersCount={pendingMembersCount}
+              pendingReviewCount={pendingReviewCount}
+              trendData={trendData}
+              memberAttendanceData={memberAttendanceData}
+              departmentAttendanceData={departmentAttendanceData}
+              onboardingVisible={onboardingVisible}
+              onboardingSteps={onboardingSteps}
+              onDismissOnboarding={handleDismissOnboarding}
+            />
+          }
+        />
+        <Route
+          path="/attendance"
+          element={
+            <AttendancePage
+              activeSession={activeSession}
+              activeEvents={activeEvents}
+              liveScannerCount={liveScannerCount}
+              liveNumberCount={liveNumberCount}
+              liveManualCount={liveManualCount}
+              pendingReviewCount={pendingReviewCount}
+              isRefreshing={isRefreshing}
+              isClosingSession={isClosingSession}
+              isStartingSession={isStartingSession}
+              isMarkingByNumber={isMarkingByNumber}
+              exportingSessionId={exportingSessionId}
+              startForm={startForm}
+              aagcForm={aagcForm}
+              onStartFormChange={(field, value) =>
+                setStartForm((currentForm) => ({ ...currentForm, [field]: value }))
+              }
+              onAagcNumberChange={(value) => setAagcForm({ aagcNumber: value })}
+              onStartSession={handleStartSession}
+              onMarkAttendanceByNumber={handleMarkAttendanceByNumber}
+              onRefresh={() => void refreshDashboard()}
+              onCloseSession={(sessionId) => void handleCloseSession(sessionId)}
+              onExport={(sessionId) => void handleExport(sessionId)}
+            />
+          }
+        />
+        <Route
+          path="/members"
+          element={
+            <MembersPage
+              departments={departments}
+              members={members}
+              selectedMemberId={selectedMemberId}
+              selectedMemberBiometrics={selectedMemberBiometrics}
+              isRefreshingMembers={isRefreshingMembers}
+              isRefreshingBiometrics={isRefreshingBiometrics}
+              isCreatingDepartment={isCreatingDepartment}
+              isCreatingMember={isCreatingMember}
+              departmentForm={departmentForm}
+              memberForm={memberForm}
+              memberFilters={memberFilters}
+              enrolledMembersCount={enrolledMembersCount}
+              pendingMembersCount={pendingMembersCount}
+              onDepartmentNameChange={(value) => setDepartmentForm({ name: value })}
+              onMemberFormChange={(field, value) =>
+                setMemberForm((currentForm) => ({ ...currentForm, [field]: value }))
+              }
+              onSearchChange={(value) =>
+                setMemberFilters((currentFilters) => ({
+                  ...currentFilters,
+                  search: value,
+                }))
+              }
+              onDepartmentFilterChange={(value) =>
+                setMemberFilters((currentFilters) => ({
+                  ...currentFilters,
+                  departmentId: value,
+                }))
+              }
+              onCreateDepartment={handleCreateDepartment}
+              onCreateMember={handleCreateMember}
+              onSubmitSearch={handleMemberSearch}
+              onRefreshMembers={() => void refreshMembers(undefined, memberFilters)}
+              onSelectMember={(memberId) => void handleSelectMember(memberId)}
+              onRefreshBiometrics={() => void refreshSelectedMemberBiometrics()}
+              onCopyMemberId={() => void handleCopyMemberId()}
+            />
+          }
+        />
+        <Route
+          path="/review-queue"
+          element={
+            <ReviewQueuePage
+              activeSession={activeSession}
+              reviewQueue={reviewQueue}
+              selectedReviewAttempt={selectedReviewAttempt}
+              selectedReviewAttemptId={selectedReviewAttemptId}
+              manualForm={manualForm}
+              isRefreshingReviewQueue={isRefreshingReviewQueue}
+              isApproving={isApproving}
+              onRefreshReviewQueue={() => void refreshReviewQueue()}
+              onSelectReviewAttempt={handleSelectReviewAttempt}
+              onClearSelectedReviewAttempt={handleClearSelectedReviewAttempt}
+              onManualFormChange={(field, value) =>
+                setManualForm((currentForm) => ({ ...currentForm, [field]: value }))
+              }
+              onSubmitApproval={handleManualApproval}
+            />
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ReportsPage
+              sessions={sessions}
+              selectedSession={selectedSession}
+              selectedSessionEvents={selectedSessionEvents}
+              exportingSessionId={exportingSessionId}
+              totalEvents={totalEvents}
+              onSelectSession={handleSelectSession}
+              onExport={(sessionId) => void handleExport(sessionId)}
+            />
+          }
+        />
+        <Route path="*" element={<Navigate to="/overview" replace />} />
+      </Routes>
+    </DashboardShell>
   )
 }
 

@@ -36,16 +36,16 @@ export function MemberListTable({
   onSelectMember,
 }: MemberListTableProps) {
   return (
-    <section className="rounded-[1.75rem] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.45)]">
+    <section className="min-w-0 rounded-[1.75rem] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.45)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
             Member Registry
           </p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+          <h3 className="mt-2 break-words text-2xl font-semibold tracking-tight text-slate-950">
             Search and select newly created members
           </h3>
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 break-words text-sm text-slate-500">
             Select a member to review their biometric status and continue enrollment in
             ScannerBridge.
           </p>
@@ -60,15 +60,18 @@ export function MemberListTable({
         </button>
       </div>
 
-      <form className="mt-6 grid gap-4 md:grid-cols-[1.6fr_1fr_auto]" onSubmit={onSubmitSearch}>
+      <form
+        className="mt-6 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_auto]"
+        onSubmit={onSubmitSearch}
+      >
         <input
-          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
+          className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Search by AAGC number, name, email, or phone"
         />
         <select
-          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
+          className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
           value={departmentFilter}
           onChange={(event) => onDepartmentFilterChange(event.target.value)}
         >
@@ -112,7 +115,7 @@ export function MemberListTable({
                         {member.aagcNumber}
                       </span>
                       <p className="mt-3 font-semibold text-slate-950">{member.name}</p>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 break-all text-xs text-slate-500">
                         {member.email} | {member.phone}
                       </p>
                     </div>
@@ -148,8 +151,8 @@ export function MemberListTable({
         )}
       </div>
 
-      <div className="mt-6 hidden overflow-hidden rounded-[1.5rem] border border-slate-200 md:block">
-        <div className="overflow-x-auto">
+        <div className="mt-6 hidden min-w-0 overflow-hidden rounded-[1.5rem] border border-slate-200 md:block">
+          <div className="min-w-0 overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
@@ -181,7 +184,7 @@ export function MemberListTable({
                       </td>
                       <td className="px-4 py-4">
                         <div className="font-medium text-slate-900">{member.name}</div>
-                        <div className="mt-1 text-xs text-slate-400">
+                        <div className="mt-1 break-all text-xs text-slate-400">
                           {member.email} | {member.phone}
                         </div>
                       </td>

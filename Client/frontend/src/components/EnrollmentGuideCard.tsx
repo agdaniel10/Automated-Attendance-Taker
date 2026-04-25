@@ -42,14 +42,14 @@ export function EnrollmentGuideCard({
   return (
     <section className="rounded-[1.75rem] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.45)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
             ScannerBridge Enrollment
           </p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+          <h3 className="mt-2 break-words text-2xl font-semibold tracking-tight text-slate-950">
             {member.name}
           </h3>
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 break-words text-sm text-slate-500">
             {member.department?.name ?? 'No department'} | {member.email} | {member.phone}
           </p>
         </div>

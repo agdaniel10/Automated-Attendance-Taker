@@ -12,11 +12,13 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: clip;
   background:
     radial-gradient(circle at top, rgba(255, 244, 214, 0.7), transparent 32%),
     linear-gradient(180deg, #fffdfa 0%, #ffffff 55%, #fffdfa 100%);
@@ -24,6 +26,7 @@ body {
 
 #root {
   min-height: 100vh;
+  overflow-x: clip;
 }
 
 * {
