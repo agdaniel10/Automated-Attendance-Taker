@@ -131,13 +131,6 @@ export function PublicRegistrationPage({
           <div className="absolute inset-x-0 top-0 h-36 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.12),_transparent_68%)]" />
           <div className="relative flex items-start justify-between gap-3">
             <ChurchLogo />
-            <button
-              type="button"
-              onClick={onOpenAdmin}
-              className="shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold tracking-[0.18em] text-slate-600 transition hover:border-slate-400 hover:text-slate-800"
-            >
-              ADMIN
-            </button>
           </div>
 
           <div className="relative mt-8 max-w-2xl space-y-5 sm:mt-10 sm:space-y-6">
