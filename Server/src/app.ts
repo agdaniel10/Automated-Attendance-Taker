@@ -5,6 +5,7 @@ import adminAuthRoutes from "./routes/adminAuthRoutes";
 import attendanceRoutes from "./routes/attendanceRoutes";
 import departmentRoutes from "./routes/departmentRoutes";
 import memberRoutes from "./routes/memberRoutes";
+import publicRoutes from "./routes/publicRoutes";
 import scannerAttendanceRoutes from "./routes/scannerAttendanceRoutes";
 import scannerAuthRoutes from "./routes/scannerAuthRoutes";
 
@@ -40,6 +41,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/admin/auth", adminAuthRoutes);
+app.use("/api/public", publicRoutes);
 app.use("/api/scanner/auth", scannerAuthRoutes);
 app.use("/api/scanner/attendance", scannerAttendanceRoutes);
 app.use("/api/departments", departmentRoutes);
