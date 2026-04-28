@@ -123,6 +123,16 @@ export function LoginScreen({
             >
               {isSubmitting ? 'SIGNING IN...' : 'ENTER DASHBOARD'}
             </button>
+
+            <p className="text-center text-xs text-slate-500">
+              Member self-registration page:
+              <a
+                href="#/register"
+                className="ml-1 font-semibold text-amber-700 underline decoration-amber-300 underline-offset-2 transition hover:text-amber-800"
+              >
+                open registration URL
+              </a>
+            </p>
           </form>
         </section>
       </div>

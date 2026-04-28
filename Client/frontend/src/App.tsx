@@ -44,6 +44,7 @@ import {
 import { AttendancePage } from './pages/AttendancePage'
 import { MembersPage } from './pages/MembersPage'
 import { OverviewPage } from './pages/OverviewPage'
+import { PublicRegistrationPage } from './pages/PublicRegistrationPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ReviewQueuePage } from './pages/ReviewQueuePage'
 import type {
@@ -494,6 +495,7 @@ function App() {
   const departmentAttendanceData = buildDepartmentAttendanceData(overviewEvents)
 
   const pageMeta = PAGE_META[location.pathname] ?? PAGE_META['/overview']
+  const isPublicRegistrationRoute = location.pathname === '/register'
   const onboardingActionLabel =
     onboardingVisible || (!onboardingDismissed && location.pathname === '/overview')
       ? 'Hide Quick Start'
@@ -1312,6 +1314,15 @@ function App() {
   function handleSelectSession(sessionId: string): void {
     setSelectedSessionId(sessionId)
     void refreshDashboard(sessionId)
+  }
+
+  if (isPublicRegistrationRoute) {
+    return (
+      <PublicRegistrationPage
+        apiBaseUrl={authSession?.baseUrl ?? loginForm.apiBaseUrl}
+        onOpenAdmin={() => startTransition(() => navigate('/'))}
+      />
+    )
   }
 
   if (!authSession) {
