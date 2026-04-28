@@ -25,8 +25,7 @@ function readableError(error: unknown, fallback: string): string {
 }
 
 export function PublicRegistrationPage({
-  apiBaseUrl,
-  onOpenAdmin,
+  apiBaseUrl
 }: PublicRegistrationPageProps) {
   const [departments, setDepartments] = useState<DepartmentRecord[]>([])
   const [isLoadingDepartments, setIsLoadingDepartments] = useState(true)
