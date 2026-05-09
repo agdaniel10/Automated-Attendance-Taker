@@ -12,6 +12,18 @@ function formatDateTime(value: string): string {
   return new Date(value).toLocaleString()
 }
 
+function formatMemberMeta(
+  departmentName: string | null | undefined,
+  email: string | null,
+  phone: string,
+): string {
+  const parts = [departmentName ?? 'No department', email?.trim() || null, phone].filter(
+    (value): value is string => Boolean(value),
+  )
+
+  return parts.join(' | ')
+}
+
 export function EnrollmentGuideCard({
   member,
   biometrics,
@@ -50,7 +62,7 @@ export function EnrollmentGuideCard({
             {member.name}
           </h3>
           <p className="mt-2 break-words text-sm text-slate-500">
-            {member.department?.name ?? 'No department'} | {member.email} | {member.phone}
+            {formatMemberMeta(member.department?.name, member.email, member.phone)}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

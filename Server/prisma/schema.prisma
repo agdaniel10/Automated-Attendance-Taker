@@ -56,7 +56,7 @@ model Member {
   aagcSequence      Int?                 @unique
   name              String
   phone             String
-  email             String               @unique
+  email             String?              @unique
   biometricStatus   BiometricStatus      @default(PENDING)
   departmentId      String
   department        Department           @relation(fields: [departmentId], references: [id], onDelete: Restrict)

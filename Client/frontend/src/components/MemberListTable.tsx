@@ -22,6 +22,10 @@ function biometricTone(status: string): string {
     : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
 }
 
+function formatMemberContact(email: string | null, phone: string): string {
+  return email?.trim() ? `${email} | ${phone}` : phone
+}
+
 export function MemberListTable({
   members,
   departments,
@@ -116,7 +120,7 @@ export function MemberListTable({
                       </span>
                       <p className="mt-3 font-semibold text-slate-950">{member.name}</p>
                       <p className="mt-1 break-all text-xs text-slate-500">
-                        {member.email} | {member.phone}
+                        {formatMemberContact(member.email, member.phone)}
                       </p>
                     </div>
                     <span
@@ -185,7 +189,7 @@ export function MemberListTable({
                       <td className="px-4 py-4">
                         <div className="font-medium text-slate-900">{member.name}</div>
                         <div className="mt-1 break-all text-xs text-slate-400">
-                          {member.email} | {member.phone}
+                          {formatMemberContact(member.email, member.phone)}
                         </div>
                       </td>
                       <td className="px-4 py-4 text-slate-600">

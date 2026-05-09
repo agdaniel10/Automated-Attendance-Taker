@@ -5,7 +5,7 @@ export type MemberRegistrationInput = {
   name: string;
   departmentId: string;
   phone: string;
-  email: string;
+  email: string | null;
 };
 
 export class EmailAlreadyExistsError extends Error {
@@ -29,7 +29,11 @@ function formatAagcNumber(sequence: number): string {
   return `AAGC-${String(sequence).padStart(AAGC_NUMBER_WIDTH, "0")}`;
 }
 
-export async function isEmailRegistered(email: string): Promise<boolean> {
+export async function isEmailRegistered(email: string | null): Promise<boolean> {
+  if (!email) {
+    return false;
+  }
+
   const existing = await prisma.member.findUnique({
     where: { email },
     select: { id: true },
@@ -45,7 +49,7 @@ export async function createMemberWithAagc(
   aagcSequence: number | null;
   name: string;
   phone: string;
-  email: string;
+  email: string | null;
   biometricStatus: string;
   departmentId: string;
   createdAt: Date;

@@ -65,7 +65,7 @@ export function MemberCreateForm({
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Email</span>
+            <span className="text-sm font-medium text-slate-700">Email (optional)</span>
             <input
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
               type="email"
@@ -103,7 +103,6 @@ export function MemberCreateForm({
             isSubmitting ||
             !form.name.trim() ||
             !form.phone.trim() ||
-            !form.email.trim() ||
             !form.departmentId.trim()
           }
         >

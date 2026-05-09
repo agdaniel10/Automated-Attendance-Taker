@@ -137,7 +137,7 @@ export interface MemberSummary {
   aagcNumber: string
   name: string
   phone: string
-  email: string
+  email: string | null
   biometricStatus: 'PENDING' | 'ENROLLED' | string
   enrolledFingerCount: number
   department: DepartmentSummary | null
@@ -147,7 +147,7 @@ export interface CreateMemberInput {
   name: string
   departmentId: string
   phone: string
-  email: string
+  email?: string
 }
 
 export interface CreateDepartmentInput {

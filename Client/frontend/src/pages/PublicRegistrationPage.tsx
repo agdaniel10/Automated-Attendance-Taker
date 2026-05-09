@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ApiError } from '../api/http'
@@ -42,7 +42,7 @@ export function PublicRegistrationPage({
     departmentId: '',
   })
 
-  async function loadDepartments(): Promise<void> {
+  const loadDepartments = useCallback(async (): Promise<void> => {
     setIsLoadingDepartments(true)
     setDepartmentLoadError('')
 
@@ -60,11 +60,11 @@ export function PublicRegistrationPage({
     } finally {
       setIsLoadingDepartments(false)
     }
-  }
+  }, [apiBaseUrl])
 
   useEffect(() => {
     void loadDepartments()
-  }, [apiBaseUrl])
+  }, [loadDepartments])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -78,8 +78,8 @@ export function PublicRegistrationPage({
       departmentId: form.departmentId.trim(),
     }
 
-    if (!payload.name || !payload.phone || !payload.email || !payload.departmentId) {
-      setSubmitError('Please complete all fields before submitting.')
+    if (!payload.name || !payload.phone || !payload.departmentId) {
+      setSubmitError('Please complete the required fields before submitting.')
       return
     }
 
@@ -141,9 +141,9 @@ export function PublicRegistrationPage({
                 Register once and receive your AAGC number instantly.
               </h2>
               <p className="max-w-xl text-base leading-7 text-slate-600">
-                Complete the form with your contact details and department. Once
-                submitted, your AAGC number appears immediately for use during
-                service attendance check-ins.
+                Complete the form with your contact details and department. Email is
+                optional. Once submitted, your AAGC number appears immediately for use
+                during service attendance check-ins.
               </p>
             </div>
 
@@ -176,7 +176,7 @@ export function PublicRegistrationPage({
           </div>
         </section>
 
-        <section className="rounded-[1.75rem] border border-slate-200/80 bg-white p-5 shadow-[0_24px_60px_-40px_rgba(15,23,42,0.45)] sm:rounded-[2rem] sm:p-8">
+        <section className="rounded-[1.75rem] border border-slate-200/80 bg-white p-5 shadow-[0_24px_60px_-40px_rgba(105,23,42,0.45)] sm:rounded-[2rem] sm:p-8">
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
               Registration Form
@@ -261,7 +261,7 @@ export function PublicRegistrationPage({
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Email Address</span>
+              <span className="text-sm font-medium text-slate-700">Email Address (optional)</span>
               <input
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
                 type="email"
@@ -317,7 +317,6 @@ export function PublicRegistrationPage({
                 departments.length === 0 ||
                 !form.name.trim() ||
                 !form.phone.trim() ||
-                !form.email.trim() ||
                 !form.departmentId.trim()
               }
             >

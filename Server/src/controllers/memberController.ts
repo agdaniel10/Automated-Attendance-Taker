@@ -26,8 +26,9 @@ type FingerPosition = (typeof FINGER_POSITIONS)[number];
 
 const validFingerPositions = new Set<string>(FINGER_POSITIONS);
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+function normalizeEmail(email: string): string | null {
+  const normalizedEmail = email.trim().toLowerCase();
+  return normalizedEmail ? normalizedEmail : null;
 }
 
 function toPrismaBytes(buffer: Buffer): Uint8Array<ArrayBuffer> {
@@ -139,9 +140,9 @@ export async function createMember(req: Request, res: Response): Promise<void> {
   const emailInput = typeof req.body?.email === "string" ? req.body.email : "";
   const email = normalizeEmail(emailInput);
 
-  if (!name || !departmentId || !phone || !email) {
+  if (!name || !departmentId || !phone) {
     res.status(400).json({
-      message: "name, departmentId, phone, and email are required.",
+      message: "name, departmentId, and phone are required.",
     });
     return;
   }
@@ -198,6 +199,14 @@ export async function createMember(req: Request, res: Response): Promise<void> {
           throw error;
         }
 
+        if (!email) {
+          if (attempt === 4) {
+            throw error;
+          }
+
+          continue;
+        }
+
         const existingEmail = await prisma.member.findUnique({
           where: { email },
           select: { id: true },
@@ -230,6 +239,14 @@ export async function createMember(req: Request, res: Response): Promise<void> {
     res.status(201).json(toMemberSummary(member));
   } catch (error) {
     if (hasPrismaErrorCode(error, "P2002")) {
+      if (!email) {
+        res.status(503).json({
+          message:
+            "Unable to assign an AAGC number right now. Please try creating the member again.",
+        });
+        return;
+      }
+
       const existingEmail = await prisma.member.findUnique({
         where: { email },
         select: { id: true },
