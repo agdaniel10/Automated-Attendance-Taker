@@ -531,6 +531,7 @@ function App() {
   const pageMeta = PAGE_META[location.pathname] ?? PAGE_META['/overview']
   const isPublicRegistrationRoute = location.pathname === '/register'
   const isQrCheckinRoute = location.pathname.startsWith('/qr')
+  console.log('pathname:', location.pathname, 'isQrCheckinRoute:', isQrCheckinRoute)
   const onboardingActionLabel =
     onboardingVisible || (!onboardingDismissed && location.pathname === '/overview')
       ? 'Hide Quick Start'

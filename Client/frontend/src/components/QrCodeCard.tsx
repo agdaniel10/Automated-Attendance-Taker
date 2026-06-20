@@ -14,7 +14,7 @@ export function QrCodeCard({ qrToken }: QrCodeCardProps) {
       return
     }
 
-    const checkinUrl = `${window.location.origin}/qr?token=${encodeURIComponent(qrToken)}`
+    const checkinUrl = `${window.location.origin}/#/qr?token=${encodeURIComponent(qrToken)}`
     QRCode.toDataURL(checkinUrl, { margin: 2, width: 300 })
       .then((url: any) => setDataUrl(url))
       .catch(() => setDataUrl(null))
@@ -24,7 +24,7 @@ export function QrCodeCard({ qrToken }: QrCodeCardProps) {
     return null
   }
 
-  const checkinUrl = `${window.location.origin}/qr?token=${encodeURIComponent(qrToken)}`
+  const checkinUrl = `${window.location.origin}/#/qr?token=${encodeURIComponent(qrToken)}`
 
   function handleDownload() {
     if (!dataUrl) return
