@@ -1364,14 +1364,6 @@ function App() {
     )
   }
 
-  // if (isQrCheckinRoute) {
-  //   return (
-  //     <QrCheckinPage
-  //       apiBaseUrl={authSession?.baseUrl ?? loginForm.apiBaseUrl}
-  //       onOpenAdmin={() => startTransition(() => navigate('/'))}
-  //     />
-  //   )
-  // }
 
   if (isQrCheckinRoute) {
     return (
