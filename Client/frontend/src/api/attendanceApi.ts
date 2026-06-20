@@ -56,13 +56,25 @@ export async function listSessionEvents(
   token: string,
   sessionId: string,
 ): Promise<AttendanceEvent[]> {
-  return requestJson<AttendanceEvent[]>(
+  const raw = await requestJson<any[]>(
     baseUrl,
     `/api/attendance/sessions/${encodeURIComponent(sessionId)}/events`,
-    {
-      token,
-    },
+    { token },
   )
+
+  return raw.map((event) => ({
+    id: event.id,
+    occurredAt: event.occurredAt,
+    source: event.source,
+    status: event.eventStatus ?? event.status ?? '',
+    message: event.message ?? null,
+    memberId: event.memberId ?? null,
+    aagcNumber: event.member?.aagcNumber ?? null,
+    name: event.member?.name ?? event.guestName ?? 'Guest',
+    department: event.member?.department?.name ?? null,
+    phone: event.member?.phone ?? null,
+    email: event.member?.email ?? null,
+  }))
 }
 
 export async function listReviewQueue(
