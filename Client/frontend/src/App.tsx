@@ -1377,7 +1377,6 @@ function App() {
     return (
       <QrCheckinPage
         apiBaseUrl={import.meta.env.VITE_API_BASE_URL ?? authSession?.baseUrl ?? loginForm.apiBaseUrl}
-        onOpenAdmin={() => startTransition(() => navigate('/'))}
       />
     )
   }
