@@ -28,7 +28,7 @@ export function QrCheckinPage({ apiBaseUrl, onOpenAdmin }: QrCheckinPageProps) {
     setResultMessage(null)
 
     try {
-      const resp = await fetch(`${apiBaseUrl}/api/public/qr-checkin`, {
+      const resp = await fetch(`${apiBaseUrl}/api/attendance/qr-checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, aagcNumber: aagc }),

@@ -1363,10 +1363,19 @@ function App() {
     )
   }
 
+  // if (isQrCheckinRoute) {
+  //   return (
+  //     <QrCheckinPage
+  //       apiBaseUrl={authSession?.baseUrl ?? loginForm.apiBaseUrl}
+  //       onOpenAdmin={() => startTransition(() => navigate('/'))}
+  //     />
+  //   )
+  // }
+
   if (isQrCheckinRoute) {
     return (
       <QrCheckinPage
-        apiBaseUrl={authSession?.baseUrl ?? loginForm.apiBaseUrl}
+        apiBaseUrl={import.meta.env.VITE_API_BASE_URL ?? authSession?.baseUrl ?? loginForm.apiBaseUrl}
         onOpenAdmin={() => startTransition(() => navigate('/'))}
       />
     )
