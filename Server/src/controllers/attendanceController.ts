@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 
 import prisma from "../lib/prisma";
+import jwt from "jsonwebtoken";
+import { env } from "../config/env";
+import { markAttendanceByAagc } from "../services/attendanceService";
 import { normalizeAagcNumber } from "../utils/aagcNumber";
 import { buildCsv } from "../utils/csv";
 import { hasPrismaErrorCode } from "../utils/prismaError";
@@ -137,155 +140,14 @@ export async function startSession(req: Request, res: Response): Promise<void> {
       startedBy: req.admin?.operatorName ?? "Admin Operator",
     },
   });
+  // generate QR check-in token for this session
+  const token = jwt.sign(
+    { type: "QR_CHECKIN", sessionId: session.id },
+    env.jwtSecret,
+    { expiresIn: `${env.qrTokenTtlHours}h` },
+  );
 
-  res.status(201).json(session);
-}
-
-export async function closeSession(req: Request, res: Response): Promise<void> {
-  const sessionId = getRouteParam(req.params.sessionId);
-
-  const session = await prisma.attendanceSession.findUnique({
-    where: { id: sessionId },
-  });
-
-  if (!session) {
-    res.status(404).json({ message: "Attendance session not found." });
-    return;
-  }
-
-  if (session.status === SESSION_STATUS.CLOSED) {
-    res.status(200).json(session);
-    return;
-  }
-
-  const updatedSession = await prisma.attendanceSession.update({
-    where: { id: sessionId },
-    data: {
-      status: SESSION_STATUS.CLOSED,
-      endedAt: new Date(),
-    },
-  });
-
-  res.status(200).json(updatedSession);
-}
-
-export async function listSessionEvents(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  const sessionId = getRouteParam(req.params.sessionId);
-
-  const session = await prisma.attendanceSession.findUnique({
-    where: { id: sessionId },
-    select: { id: true },
-  });
-
-  if (!session) {
-    res.status(404).json({ message: "Attendance session not found." });
-    return;
-  }
-
-  const events = await prisma.attendanceEvent.findMany({
-    where: { sessionId },
-    include: {
-      member: {
-        include: {
-          department: true,
-        },
-      },
-    },
-    orderBy: { occurredAt: "asc" },
-  });
-
-  const response = events.map((event: any) => ({
-    id: event.id,
-    occurredAt: event.occurredAt,
-    source: event.source,
-    status: event.eventStatus,
-    message: event.message,
-    memberId: event.memberId,
-    aagcNumber: event.member?.aagcNumber ?? null,
-    name: event.member?.name ?? event.guestName ?? "Unknown",
-    department: event.member?.department?.name ?? null,
-    phone: event.member?.phone ?? null,
-    email: event.member?.email ?? null,
-  }));
-
-  res.status(200).json(response);
-}
-
-export async function listReviewQueue(req: Request, res: Response): Promise<void> {
-  const sessionId = getRouteParam(req.params.sessionId);
-  const status = parseReviewQueueStatus(req.query.status);
-
-  const session = await prisma.attendanceSession.findUnique({
-    where: { id: sessionId },
-    select: {
-      id: true,
-      status: true,
-      programName: true,
-    },
-  });
-
-  if (!session) {
-    res.status(404).json({ message: "Attendance session not found." });
-    return;
-  }
-
-  const attempts = await prisma.verificationAttempt.findMany({
-    where: {
-      sessionId,
-      ...buildReviewQueueWhere(status),
-    },
-    include: {
-      matchedMember: {
-        include: {
-          department: true,
-        },
-      },
-    },
-    orderBy: {
-      occurredAt: "desc",
-    },
-    take: status === REVIEW_QUEUE_STATUS.PENDING ? 100 : 150,
-  });
-
-  const response = attempts.map((attempt: any) => ({
-    id: attempt.id,
-    occurredAt: attempt.occurredAt,
-    outcome: attempt.outcome,
-    reviewStatus:
-      attempt.outcome === VERIFICATION_OUTCOME.ADMIN_APPROVED
-        ? REVIEW_QUEUE_STATUS.APPROVED
-        : REVIEW_QUEUE_STATUS.PENDING,
-    deviceId: attempt.deviceId,
-    confidence: attempt.confidence,
-    notes: attempt.notes,
-    approvedBy: attempt.approvedBy,
-    approvedAt: attempt.approvedAt,
-    matchedMember: attempt.matchedMember
-      ? {
-          id: attempt.matchedMember.id,
-          aagcNumber: attempt.matchedMember.aagcNumber ?? null,
-          name: attempt.matchedMember.name,
-          department: attempt.matchedMember.department?.name ?? null,
-          phone: attempt.matchedMember.phone,
-          email: attempt.matchedMember.email,
-          biometricStatus: attempt.matchedMember.biometricStatus,
-        }
-      : null,
-  }));
-
-  res.status(200).json({
-    session: {
-      id: session.id,
-      status: session.status,
-      programName: session.programName,
-    },
-    status,
-    itemCount: response.length,
-    items: response,
-  });
+  res.status(201).json({ session, qrToken: token });
 }
 
 export async function scanAttendance(req: Request, res: Response): Promise<void> {
@@ -588,6 +450,54 @@ export async function markAttendanceByAagcNumber(
   }
 }
 
+export async function qrCheckin(req: Request, res: Response): Promise<void> {
+  const token = typeof req.body?.token === "string" ? req.body.token : "";
+  const aagcNumberInput =
+    typeof req.body?.aagcNumber === "string" ? req.body.aagcNumber : "";
+
+  if (!token) {
+    res.status(400).json({ message: "QR token is required." });
+    return;
+  }
+
+  let payload: any = null;
+  try {
+    payload = jwt.verify(token, env.jwtSecret) as any;
+  } catch (error) {
+    res.status(401).json({ message: "QR token is invalid or expired." });
+    return;
+  }
+
+  if (!payload || payload.type !== "QR_CHECKIN" || !payload.sessionId) {
+    res.status(400).json({ message: "QR token is not a valid check-in token." });
+    return;
+  }
+
+  const result = await markAttendanceByAagc(payload.sessionId, aagcNumberInput);
+
+  if (result.status === "invalid_aagc") {
+    res.status(400).json({ message: result.message });
+    return;
+  }
+
+  if (result.status === "session_not_active") {
+    res.status(404).json({ message: result.message, status: "session_not_active" });
+    return;
+  }
+
+  if (result.status === "member_not_found") {
+    res.status(404).json({ status: "member_not_found", message: result.message });
+    return;
+  }
+
+  if (result.status === "already_marked" || result.status === "present") {
+    res.status(200).json(result);
+    return;
+  }
+
+  res.status(500).json({ message: "Unknown error." });
+}
+
 export async function adminApproveAttendance(
   req: Request,
   res: Response,
@@ -798,4 +708,69 @@ export async function exportSessionCsv(
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.status(200).send(csv);
+}
+
+
+/// Added controllers
+export async function closeSession(req: Request, res: Response): Promise<void> {
+  const sessionId = getRouteParam(req.params.sessionId);
+
+  const session = await prisma.attendanceSession.findUnique({
+    where: { id: sessionId },
+    select: { id: true, status: true },
+  });
+
+  if (!session) {
+    res.status(404).json({ message: "Attendance session not found." });
+    return;
+  }
+
+  if (session.status === SESSION_STATUS.CLOSED) {
+    res.status(409).json({ message: "Session is already closed." });
+    return;
+  }
+
+  const updated = await prisma.attendanceSession.update({
+    where: { id: sessionId },
+    data: { status: SESSION_STATUS.CLOSED, endedAt: new Date() },
+  });
+
+  res.status(200).json(updated);
+}
+
+export async function listSessionEvents(req: Request, res: Response): Promise<void> {
+  const sessionId = getRouteParam(req.params.sessionId);
+
+  const events = await prisma.attendanceEvent.findMany({
+    where: { sessionId },
+    include: {
+      member: {
+        include: { department: true },
+      },
+    },
+    orderBy: { occurredAt: "asc" },
+  });
+
+  res.status(200).json(events);
+}
+
+export async function listReviewQueue(req: Request, res: Response): Promise<void> {
+  const sessionId = getRouteParam(req.params.sessionId);
+  const status = parseReviewQueueStatus(req.query.status);
+
+  const attempts = await prisma.verificationAttempt.findMany({
+    where: {
+      sessionId,
+      ...buildReviewQueueWhere(status),
+    },
+    include: {
+      matchedMember: {
+        include: { department: true },
+      },
+    },
+    orderBy: { occurredAt: "desc" },
+    take: 200,
+  });
+
+  res.status(200).json(attempts);
 }

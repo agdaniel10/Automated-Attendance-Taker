@@ -44,6 +44,11 @@ export interface StartSessionInput {
   notes: string
 }
 
+export interface StartSessionResult {
+  session: AttendanceSession
+  qrToken: string
+}
+
 export interface ManualApprovalInput {
   displayName: string
   notes: string

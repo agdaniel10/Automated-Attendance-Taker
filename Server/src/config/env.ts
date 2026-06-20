@@ -6,6 +6,7 @@ type Env = {
   adminPasswordHash?: string;
   scannerSharedSecret?: string;
   templateEncryptionKey: Buffer;
+  qrTokenTtlHours: number;
 };
 
 function getRequiredEnv(name: string): string {
@@ -26,6 +27,15 @@ function parsePort(value: string | undefined): number {
     throw new Error(`Invalid PORT value: ${value}`);
   }
 
+  return parsed;
+}
+
+function parsePositiveInt(value: string | undefined, defaultValue: number): number {
+  if (!value) return defaultValue;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid integer value: ${value}`);
+  }
   return parsed;
 }
 
@@ -57,6 +67,7 @@ export const env: Env = {
   templateEncryptionKey: parseEncryptionKey(
     getRequiredEnv("TEMPLATE_ENCRYPTION_KEY"),
   ),
+  qrTokenTtlHours: parsePositiveInt(process.env.QR_TOKEN_TTL_HOURS, 12),
 };
 
 if (!env.adminPassword && !env.adminPasswordHash) {

@@ -45,6 +45,7 @@ import { AttendancePage } from './pages/AttendancePage'
 import { MembersPage } from './pages/MembersPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { PublicRegistrationPage } from './pages/PublicRegistrationPage'
+import QrCheckinPage from './pages/QrCheckinPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ReviewQueuePage } from './pages/ReviewQueuePage'
 import type {
@@ -150,17 +151,18 @@ function shortMemberLabel(name: string, aagcNumber: string | null): string {
   return words.slice(0, 2).join(' ')
 }
 
-function buildMemberAttendanceData(
-  events: AttendanceEvent[],
-): MemberAttendanceDatum[] {
+function buildMemberAttendanceData(events: AttendanceEvent[]): MemberAttendanceDatum[] {
   const counts = new Map<string, MemberAttendanceDatum>()
 
   for (const event of events) {
-    if (!event.memberId && !event.aagcNumber) {
+    const name = event.name ?? null  // handle both field names
+
+    // skip events with no identifiable person
+    if (!event.memberId && !event.aagcNumber && !name) {
       continue
     }
 
-    const key = event.memberId ?? event.aagcNumber ?? event.name.toLowerCase()
+    const key = event.memberId ?? event.aagcNumber ?? name!.toLowerCase()
     const existing = counts.get(key)
 
     if (existing) {
@@ -169,10 +171,10 @@ function buildMemberAttendanceData(
     }
 
     counts.set(key, {
-      label: shortMemberLabel(event.name, event.aagcNumber),
+      label: shortMemberLabel(name ?? 'Guest', event.aagcNumber ?? null),
       attendanceCount: 1,
-      fullName: event.name,
-      aagcNumber: event.aagcNumber,
+      fullName: name ?? 'Guest',
+      aagcNumber: event.aagcNumber ?? null,
     })
   }
 
@@ -180,6 +182,37 @@ function buildMemberAttendanceData(
     .sort((left, right) => right.attendanceCount - left.attendanceCount)
     .slice(0, 7)
 }
+
+// function buildMemberAttendanceData(
+//   events: AttendanceEvent[],
+// ): MemberAttendanceDatum[] {
+//   const counts = new Map<string, MemberAttendanceDatum>()
+
+//   for (const event of events) {
+//     if (!event.memberId && !event.aagcNumber) {
+//       continue
+//     }
+
+//     const key = event.memberId ?? event.aagcNumber ?? event.name.toLowerCase()
+//     const existing = counts.get(key)
+
+//     if (existing) {
+//       existing.attendanceCount += 1
+//       continue
+//     }
+
+//     counts.set(key, {
+//       label: shortMemberLabel(event.name, event.aagcNumber),
+//       attendanceCount: 1,
+//       fullName: event.name,
+//       aagcNumber: event.aagcNumber,
+//     })
+//   }
+
+//   return [...counts.values()]
+//     .sort((left, right) => right.attendanceCount - left.attendanceCount)
+//     .slice(0, 7)
+// }
 
 const PIE_COLORS = ['#0f172a', '#f59e0b', '#38bdf8', '#10b981', '#f97316', '#7c3aed']
 
@@ -345,6 +378,7 @@ function App() {
     operatorName: loadStoredAdminSession()?.operatorName ?? 'Admin Operator',
     password: '',
   }))
+    const [qrToken, setQrToken] = useState<string | null>(null)
   const [loginError, setLoginError] = useState('')
   const [isLoggingIn, setIsLoggingIn] = useState(false)
 
@@ -496,6 +530,7 @@ function App() {
 
   const pageMeta = PAGE_META[location.pathname] ?? PAGE_META['/overview']
   const isPublicRegistrationRoute = location.pathname === '/register'
+  const isQrCheckinRoute = location.pathname.startsWith('/qr')
   const onboardingActionLabel =
     onboardingVisible || (!onboardingDismissed && location.pathname === '/overview')
       ? 'Hide Quick Start'
@@ -637,7 +672,8 @@ function App() {
                     authSession.token,
                     nextActiveSession.id,
                   )
-                  nextReviewQueue = queue.items
+                  console.log('queue response:', queue)
+                  nextReviewQueue = queue.items ?? []
                 })(),
               ]
             : []),
@@ -995,7 +1031,9 @@ function App() {
     setIsStartingSession(true)
 
     try {
-      const session = await startSession(authSession.baseUrl, authSession.token, startForm)
+        const result = await startSession(authSession.baseUrl, authSession.token, startForm)
+        const session = result.session
+        setQrToken(result.qrToken)
       pushToast(
         'success',
         'Session started',
@@ -1325,6 +1363,15 @@ function App() {
     )
   }
 
+  if (isQrCheckinRoute) {
+    return (
+      <QrCheckinPage
+        apiBaseUrl={authSession?.baseUrl ?? loginForm.apiBaseUrl}
+        onOpenAdmin={() => startTransition(() => navigate('/'))}
+      />
+    )
+  }
+
   if (!authSession) {
     return (
       <LoginScreen
@@ -1405,6 +1452,7 @@ function App() {
               onRefresh={() => void refreshDashboard()}
               onCloseSession={(sessionId) => void handleCloseSession(sessionId)}
               onExport={(sessionId) => void handleExport(sessionId)}
+                qrToken={qrToken}
             />
           }
         />

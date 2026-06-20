@@ -7,6 +7,7 @@ import { MetricCard } from '../components/MetricCard'
 import { SessionStartForm } from '../components/SessionStartForm'
 import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import type { AttendanceEvent, AttendanceSession } from '../types/dashboard'
+import QrCodeCard from '../components/QrCodeCard'
 
 interface AttendancePageProps {
   activeSession: AttendanceSession | null
@@ -34,6 +35,7 @@ interface AttendancePageProps {
   onRefresh: () => void
   onCloseSession: (sessionId: string) => void
   onExport: (sessionId: string) => void
+  qrToken: string | null
 }
 
 export function AttendancePage({
@@ -57,6 +59,7 @@ export function AttendancePage({
   onRefresh,
   onCloseSession,
   onExport,
+  qrToken,
 }: AttendancePageProps) {
   return (
     <div className="space-y-6">
@@ -143,6 +146,8 @@ export function AttendancePage({
             onAagcNumberChange={onAagcNumberChange}
             onSubmit={onMarkAttendanceByNumber}
           />
+
+          <QrCodeCard qrToken={qrToken ?? null} />
 
           <section className="rounded-[1.75rem] border border-rose-200/80 bg-white p-6 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.45)]">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-rose-500">

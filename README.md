@@ -378,3 +378,27 @@ So instead of building only a technical demo, the goal here has been to build a 
 
 This project currently has no explicit open-source license in the repository yet.
 If you plan to publish it publicly on GitHub, it would be good to add one.
+
+## QR Check-in (new)
+
+This release adds a simple QR check-in flow for public attendees:
+
+- When an admin starts a session (`POST /api/attendance/sessions`), the server now returns a short-lived `qrToken` (JWT). The token payload contains `{ type: "QR_CHECKIN", sessionId }` and expires after `QR_TOKEN_TTL_HOURS` (default 12).
+- The frontend should generate a QR code that links to a public check-in page (or encodes the token). Example URL: `https://<frontend>/qr?token=<qrToken>`.
+- Public flow (no authentication): attendee opens the page, types their `AAGC` number, and submits the token and number to `POST /api/public/qr-checkin` with JSON body `{ token, aagcNumber }`.
+
+Responses mirror the typed-number API:
+- `present` — attendance recorded
+- `already_marked` — attendance was already recorded
+- `member_not_found` — the provided AAGC does not exist
+- `session_not_active` — the token refers to a non-active session or session closed
+
+Security notes:
+- The `qrToken` is short-lived and scoped to a single session. Keep `JWT_SECRET` safe.
+- Consider adding rate-limiting or a simple CAPTCHA on the public check-in page to reduce brute-force attempts against AAGC numbers.
+- Optionally configure `QR_TOKEN_TTL_HOURS` in the server environment to control token lifetime.
+
+Frontend implementation hints:
+- After starting a session, generate a QR code from the returned `qrToken` (e.g. use `qrcode` or a client-side library).
+- The public check-in page should POST `{ token, aagcNumber }` to `/api/public/qr-checkin` and show friendly messages based on the response.
+

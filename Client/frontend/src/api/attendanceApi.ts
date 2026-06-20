@@ -9,6 +9,7 @@ import type {
   ReviewQueueResponse,
   ReviewQueueStatus,
   StartSessionInput,
+  StartSessionResult,
 } from '../types/dashboard'
 
 export async function listSessions(
@@ -26,8 +27,8 @@ export async function startSession(
   baseUrl: string,
   token: string,
   payload: StartSessionInput,
-): Promise<AttendanceSession> {
-  return requestJson<AttendanceSession>(baseUrl, '/api/attendance/sessions', {
+): Promise<StartSessionResult> {
+  return requestJson<StartSessionResult>(baseUrl, '/api/attendance/sessions', {
     method: 'POST',
     token,
     body: payload,
